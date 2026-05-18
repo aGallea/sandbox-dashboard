@@ -3,9 +3,12 @@ package server
 import (
 	"context"
 	"net/http"
+	"os"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/aGallea/agent-sandbox-dashboard/internal/prom"
 )
@@ -65,23 +68,36 @@ func handleMetric(d Deps) http.HandlerFunc {
 			Description: metric.Description,
 			Unit:        metric.Unit,
 			Range:       chooseRangeLabel(token),
-			Series:      make([]MetricSeries, 0, len(metric.Series)),
+			Series:      make([]MetricSeries, len(metric.Series)),
 		}
-		for _, s := range metric.Series {
-			pts, err := d.Prom.QueryRange(r.Context(), s.Query, rng)
-			if err != nil {
-				writeProblem(w, d.Logger, problemArgs{
-					Status:    http.StatusBadGateway,
-					Type:      "prometheus-unreachable",
-					Detail:    "Prometheus query failed",
-					LogReason: err.Error(),
-				})
-				return
-			}
-			resp.Series = append(resp.Series, MetricSeries{
-				Label:  s.Label,
-				Points: pts,
+
+		perSeriesTimeout := perSeriesTimeoutFromEnv()
+		g, gctx := errgroup.WithContext(r.Context())
+		var mu sync.Mutex
+		g.SetLimit(8)
+		for i, s := range metric.Series {
+			i, s := i, s
+			g.Go(func() error {
+				ctx, cancel := context.WithTimeout(gctx, perSeriesTimeout)
+				defer cancel()
+				pts, err := d.Prom.QueryRange(ctx, s.Query, rng)
+				if err != nil {
+					return err
+				}
+				mu.Lock()
+				resp.Series[i] = MetricSeries{Label: s.Label, Points: pts}
+				mu.Unlock()
+				return nil
 			})
+		}
+		if err := g.Wait(); err != nil {
+			writeProblem(w, d.Logger, problemArgs{
+				Status:    http.StatusBadGateway,
+				Type:      "prometheus-unreachable",
+				Detail:    "Prometheus query failed",
+				LogReason: err.Error(),
+			})
+			return
 		}
 		writeJSON(w, http.StatusOK, resp)
 	}
@@ -92,4 +108,19 @@ func chooseRangeLabel(token string) string {
 		return "1h"
 	}
 	return token
+}
+
+// perSeriesTimeoutFromEnv reads AGENT_SANDBOX_DASHBOARD_METRICS_TIMEOUT (e.g. "10s").
+// Returns 10s on missing/invalid input.
+func perSeriesTimeoutFromEnv() time.Duration {
+	const def = 10 * time.Second
+	v, ok := os.LookupEnv("AGENT_SANDBOX_DASHBOARD_METRICS_TIMEOUT")
+	if !ok {
+		return def
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d <= 0 {
+		return def
+	}
+	return d
 }
