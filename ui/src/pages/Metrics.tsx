@@ -7,7 +7,10 @@ const RANGES: MetricRange[] = ['15m', '1h', '6h', '24h'];
 
 export function MetricsPage() {
   const [params, setParams] = useSearchParams();
-  const range = (params.get('range') as MetricRange) || '1h';
+  const raw = params.get('range');
+  const range: MetricRange = (RANGES as readonly string[]).includes(raw ?? '')
+    ? (raw as MetricRange)
+    : '1h';
 
   const setRange = (r: MetricRange) => {
     const next = new URLSearchParams(params);
