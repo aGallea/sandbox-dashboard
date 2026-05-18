@@ -45,3 +45,26 @@ func TestEventsFor_FiltersByInvolvedObjectAndSortsNewestFirst(t *testing.T) {
 	require.Equal(t, "newer", got[0].Message, "should be sorted newest-first")
 	require.Equal(t, "older", got[1].Message)
 }
+
+func TestEventsFor_RespectsTimeWindow(t *testing.T) {
+	now := time.Now()
+	mkEvent := func(name, msg string, ago time.Duration) *corev1.Event {
+		return &corev1.Event{
+			ObjectMeta:     metav1.ObjectMeta{Name: name, Namespace: "ns1"},
+			InvolvedObject: corev1.ObjectReference{Kind: "Sandbox", Namespace: "ns1", Name: "match"},
+			Type:           corev1.EventTypeNormal,
+			Reason:         "Test",
+			Message:        msg,
+			LastTimestamp:  metav1.NewTime(now.Add(-ago)),
+		}
+	}
+	c := fake.NewClientBuilder().WithScheme(k8s.NewScheme()).WithObjects(
+		mkEvent("recent", "kept", 10*time.Minute),
+		mkEvent("old", "dropped", 2*time.Hour),
+	).Build()
+
+	got, err := eventsForWindow(context.Background(), c, "ns1", "match", 10, time.Hour, now)
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	require.Equal(t, "kept", got[0].Message)
+}
