@@ -38,5 +38,11 @@ func New(d Deps) http.Handler {
 		_, _ = w.Write([]byte("ok"))
 	})
 
+	r.Route("/api/v1", func(r chi.Router) {
+		if d.Client != nil {
+			r.Get("/overview", handleOverview(d.Client))
+		}
+	})
+
 	return r
 }
