@@ -49,6 +49,20 @@ func TestAPI_404IsJSON(t *testing.T) {
 	require.Equal(t, "application/problem+json", rec.Header().Get("Content-Type"))
 }
 
+func TestSPAFallback_RoutesNonAPIToIndex(t *testing.T) {
+	r := New(Deps{
+		CacheSynced: func() bool { return true },
+		UIAssets:    nopFS{},
+	})
+	req := httptest.NewRequest(http.MethodGet, "/some/client-side/route", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	// nopFS.Open returns ErrNotExist → ServeFileFS responds 404.
+	// Crucial assertion: the response is NOT JSON problem+json (i.e. we routed
+	// through the SPA branch, not the /api/ 404 branch).
+	require.NotEqual(t, "application/problem+json", rec.Header().Get("Content-Type"))
+}
+
 type nopFS struct{}
 
 func (nopFS) Open(_ string) (fs.File, error) { return nil, fs.ErrNotExist }

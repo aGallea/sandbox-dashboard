@@ -71,6 +71,18 @@ func New(d Deps) http.Handler {
 		}
 	})
 
+	// Static SPA assets — only the predictable paths Vite emits.
+	if d.UIAssets != nil {
+		fileServer := http.FileServer(http.FS(d.UIAssets))
+		r.Handle("/assets/*", fileServer)
+		r.Handle("/favicon.ico", fileServer)
+		r.Handle("/favicon.svg", fileServer)
+	}
+
+	// Single source of truth for unmatched paths:
+	//   /api/*  → JSON problem+json 404
+	//   anything else with UIAssets → serve index.html (SPA client-side routing)
+	//   anything else without UIAssets → plain 404
 	r.NotFound(func(w http.ResponseWriter, req *http.Request) {
 		if strings.HasPrefix(req.URL.Path, "/api/") {
 			writeProblem(w, d.Logger, problemArgs{
@@ -85,24 +97,6 @@ func New(d Deps) http.Handler {
 		}
 		http.NotFound(w, req)
 	})
-
-	if d.UIAssets != nil {
-		fileServer := http.FileServer(http.FS(d.UIAssets))
-		r.Handle("/assets/*", fileServer)
-		r.Handle("/favicon.ico", fileServer)
-		r.Handle("/favicon.svg", fileServer)
-		r.Get("/*", func(w http.ResponseWriter, req *http.Request) {
-			if strings.HasPrefix(req.URL.Path, "/api/") ||
-				req.URL.Path == "/healthz" || req.URL.Path == "/readyz" {
-				writeProblem(w, d.Logger, problemArgs{
-					Status: http.StatusNotFound, Type: "not-found",
-					Detail: "no such resource",
-				})
-				return
-			}
-			http.ServeFileFS(w, req, d.UIAssets, "index.html")
-		})
-	}
 
 	return r
 }
