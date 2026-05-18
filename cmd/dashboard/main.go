@@ -97,13 +97,19 @@ func main() {
 		logger.Error("load embedded UI assets", "err", err)
 		os.Exit(1)
 	}
-	router := server.New(server.Deps{
+	deps := server.Deps{
 		Client:      mgr.GetClient(),
 		CacheSynced: cacheSynced.Load,
 		UIAssets:    assets,
 		Logger:      logger,
-		Prom:        promClient, // nil-safe: handler returns 503 if nil
-	})
+	}
+	// Only assign Prom when the client was actually created. Assigning a typed
+	// nil *prom.Client to a server.QueryRanger field would wrap it in a
+	// non-nil interface value and bypass the handler's nil check.
+	if promClient != nil {
+		deps.Prom = promClient
+	}
+	router := server.New(deps)
 
 	srv := &http.Server{
 		Addr:              listenAddr,
