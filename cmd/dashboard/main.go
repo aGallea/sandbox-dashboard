@@ -19,6 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 
 	"github.com/aGallea/agent-sandbox-dashboard/internal/k8s"
+	"github.com/aGallea/agent-sandbox-dashboard/internal/prom"
 	"github.com/aGallea/agent-sandbox-dashboard/internal/server"
 	"github.com/aGallea/agent-sandbox-dashboard/internal/ui"
 )
@@ -28,10 +29,30 @@ func main() {
 	// Note: the "kubeconfig" flag is already registered by the init() in
 	// sigs.k8s.io/controller-runtime/pkg/client/config — do not re-register it.
 	flag.StringVar(&listenAddr, "listen-addr", ":8080", "HTTP bind address")
+	var promURL string
+	flag.StringVar(&promURL, "prometheus-url", "", "Optional Prometheus base URL (e.g. http://prometheus.monitoring.svc:9090). If empty, /api/v1/metrics/* returns 503.")
 	flag.Parse()
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	ctrl.SetLogger(slogToLogr(logger))
+
+	if promURL == "" {
+		if env := os.Getenv("PROMETHEUS_URL"); env != "" {
+			promURL = env
+		}
+	}
+	var promClient *prom.Client
+	if promURL != "" {
+		var err error
+		promClient, err = prom.NewClient(promURL)
+		if err != nil {
+			logger.Error("create prometheus client", "err", err)
+			os.Exit(1)
+		}
+		logger.Info("prometheus client configured", "url", promURL)
+	} else {
+		logger.Info("prometheus URL not set — metrics endpoint will return 503")
+	}
 
 	cfg, err := config.GetConfig()
 	if err != nil {
@@ -81,6 +102,7 @@ func main() {
 		CacheSynced: cacheSynced.Load,
 		UIAssets:    assets,
 		Logger:      logger,
+		Prom:        promClient, // nil-safe: handler returns 503 if nil
 	})
 
 	srv := &http.Server{
