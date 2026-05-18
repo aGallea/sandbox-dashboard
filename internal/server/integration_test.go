@@ -66,14 +66,19 @@ func TestIntegration_OverviewAndDetailViaCachedClient(t *testing.T) {
 	require.NoError(t, directClient.Create(ctx, mkClaim("c1", "default", "t1")))
 	require.NoError(t, directClient.Create(ctx, mkWarmPool("w1", "default", "t1")))
 
-	// Wait for the cached client to observe the writes.
+	// Wait for all four informers to observe the writes — each kind has an
+	// independent watch and there is no global "cache caught up" signal.
+	cached := mgr.GetClient()
 	require.Eventually(t, func() bool {
 		var sbs v1alpha1.SandboxList
-		if err := mgr.GetClient().List(ctx, &sbs); err != nil {
-			return false
-		}
-		return len(sbs.Items) == 1
-	}, 5*time.Second, 50*time.Millisecond, "Sandbox informer never observed s1")
+		var cs extv1alpha1.SandboxClaimList
+		var ts extv1alpha1.SandboxTemplateList
+		var ws extv1alpha1.SandboxWarmPoolList
+		return cached.List(ctx, &sbs) == nil && len(sbs.Items) == 1 &&
+			cached.List(ctx, &cs) == nil && len(cs.Items) == 1 &&
+			cached.List(ctx, &ts) == nil && len(ts.Items) == 1 &&
+			cached.List(ctx, &ws) == nil && len(ws.Items) == 1
+	}, 5*time.Second, 50*time.Millisecond, "all four informers must observe their fixtures")
 
 	r := server.New(server.Deps{
 		Client:      mgr.GetClient(),
