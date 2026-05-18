@@ -80,6 +80,7 @@ func main() {
 		Client:      mgr.GetClient(),
 		CacheSynced: cacheSynced.Load,
 		UIAssets:    assets,
+		Logger:      logger,
 	})
 
 	srv := &http.Server{

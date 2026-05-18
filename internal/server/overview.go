@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1alpha1 "sigs.k8s.io/agent-sandbox/api/v1alpha1"
 	extv1alpha1 "sigs.k8s.io/agent-sandbox/extensions/api/v1alpha1"
@@ -39,14 +38,19 @@ type WarmPoolCounts struct {
 	ReadyReplicas int32 `json:"readyReplicas"`
 }
 
-func handleOverview(reader client.Reader) http.HandlerFunc {
+func handleOverview(d Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		resp := OverviewResponse{}
 
 		var sbs v1alpha1.SandboxList
-		if err := reader.List(ctx, &sbs); err != nil {
-			writeProblem(w, http.StatusInternalServerError, "list-sandboxes", err.Error())
+		if err := d.Client.List(ctx, &sbs); err != nil {
+			writeProblem(w, d.Logger, problemArgs{
+				Status:    http.StatusInternalServerError,
+				Type:      "list-sandboxes",
+				Detail:    "could not list sandboxes",
+				LogReason: err.Error(),
+			})
 			return
 		}
 		resp.Sandboxes = countByReady(sbs.Items, func(i int) []metav1.Condition {
@@ -54,8 +58,13 @@ func handleOverview(reader client.Reader) http.HandlerFunc {
 		})
 
 		var claims extv1alpha1.SandboxClaimList
-		if err := reader.List(ctx, &claims); err != nil {
-			writeProblem(w, http.StatusInternalServerError, "list-claims", err.Error())
+		if err := d.Client.List(ctx, &claims); err != nil {
+			writeProblem(w, d.Logger, problemArgs{
+				Status:    http.StatusInternalServerError,
+				Type:      "list-claims",
+				Detail:    "could not list claims",
+				LogReason: err.Error(),
+			})
 			return
 		}
 		resp.Claims = countByReady(claims.Items, func(i int) []metav1.Condition {
@@ -63,15 +72,25 @@ func handleOverview(reader client.Reader) http.HandlerFunc {
 		})
 
 		var tmpls extv1alpha1.SandboxTemplateList
-		if err := reader.List(ctx, &tmpls); err != nil {
-			writeProblem(w, http.StatusInternalServerError, "list-templates", err.Error())
+		if err := d.Client.List(ctx, &tmpls); err != nil {
+			writeProblem(w, d.Logger, problemArgs{
+				Status:    http.StatusInternalServerError,
+				Type:      "list-templates",
+				Detail:    "could not list templates",
+				LogReason: err.Error(),
+			})
 			return
 		}
 		resp.Templates = TemplateCounts{Total: len(tmpls.Items)}
 
 		var pools extv1alpha1.SandboxWarmPoolList
-		if err := reader.List(ctx, &pools); err != nil {
-			writeProblem(w, http.StatusInternalServerError, "list-warmpools", err.Error())
+		if err := d.Client.List(ctx, &pools); err != nil {
+			writeProblem(w, d.Logger, problemArgs{
+				Status:    http.StatusInternalServerError,
+				Type:      "list-warmpools",
+				Detail:    "could not list warm pools",
+				LogReason: err.Error(),
+			})
 			return
 		}
 		resp.WarmPools.Total = len(pools.Items)
@@ -107,15 +126,4 @@ func readyState(conds []metav1.Condition) metav1.ConditionStatus {
 		}
 	}
 	return metav1.ConditionUnknown
-}
-
-// writeProblem emits an RFC 7807 problem+json response.
-func writeProblem(w http.ResponseWriter, status int, typ, detail string) {
-	w.Header().Set("Content-Type", "application/problem+json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"type":   "/errors/" + typ,
-		"status": status,
-		"detail": detail,
-	})
 }

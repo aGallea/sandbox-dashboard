@@ -3,6 +3,7 @@ package server
 
 import (
 	"io/fs"
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -18,6 +19,8 @@ type Deps struct {
 	CacheSynced func() bool
 	// UIAssets is the embedded SPA filesystem. Optional; if nil, no SPA is served.
 	UIAssets fs.FS
+	// Logger is used for structured error logging. Optional; if nil, errors are not logged.
+	Logger *slog.Logger
 }
 
 // New returns a fully wired chi router.
@@ -42,9 +45,9 @@ func New(d Deps) http.Handler {
 	})
 
 	r.Route("/api/v1", func(r chi.Router) {
-		r.Use(requireCacheSynced(d.CacheSynced))
+		r.Use(requireCacheSynced(d.CacheSynced, d.Logger))
 		if d.Client != nil {
-			r.Get("/overview", handleOverview(d.Client))
+			r.Get("/overview", handleOverview(d))
 		}
 	})
 
@@ -63,11 +66,16 @@ func New(d Deps) http.Handler {
 
 // requireCacheSynced is a middleware that returns 503 problem+json until the
 // informer cache has completed its initial sync.
-func requireCacheSynced(synced func() bool) func(http.Handler) http.Handler {
+func requireCacheSynced(synced func() bool, logger *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if synced == nil || !synced() {
-				writeProblem(w, http.StatusServiceUnavailable, "cache-not-synced", "informer cache is still syncing; retry shortly")
+				writeProblem(w, logger, problemArgs{
+					Status: http.StatusServiceUnavailable,
+					Type:   "cache-not-synced",
+					Detail: "informer cache is still syncing; retry shortly",
+					// no LogReason — expected during startup
+				})
 				return
 			}
 			next.ServeHTTP(w, r)
