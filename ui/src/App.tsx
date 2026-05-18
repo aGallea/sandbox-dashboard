@@ -1,8 +1,12 @@
+import { lazy, Suspense } from 'react';
 import { Link, NavLink, Route, Routes } from 'react-router-dom';
-import { MetricsPage } from './pages/Metrics';
 import { OverviewPage } from './pages/Overview';
 import { ResourceListPage } from './pages/ResourceList';
 import { RESOURCES } from './resources/config';
+
+const MetricsPage = lazy(() =>
+  import('./pages/Metrics').then((m) => ({ default: m.MetricsPage })),
+);
 
 export function App() {
   return (
@@ -28,7 +32,14 @@ export function App() {
       <main>
         <Routes>
           <Route path="/" element={<OverviewPage />} />
-          <Route path="/metrics" element={<MetricsPage />} />
+          <Route
+            path="/metrics"
+            element={
+              <Suspense fallback={<div className="p-6 text-slate-500">Loading metrics…</div>}>
+                <MetricsPage />
+              </Suspense>
+            }
+          />
           <Route path="/sandboxes" element={<ResourceListPage kind="sandboxes" />} />
           <Route path="/sandboxes/:namespace/:name" element={<ResourceListPage kind="sandboxes" />} />
           <Route path="/claims" element={<ResourceListPage kind="claims" />} />
