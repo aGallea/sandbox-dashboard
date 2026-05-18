@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -59,12 +60,35 @@ func New(d Deps) http.Handler {
 		}
 	})
 
+	r.NotFound(func(w http.ResponseWriter, req *http.Request) {
+		if strings.HasPrefix(req.URL.Path, "/api/") {
+			writeProblem(w, d.Logger, problemArgs{
+				Status: http.StatusNotFound, Type: "not-found",
+				Detail: "no such resource",
+			})
+			return
+		}
+		if d.UIAssets != nil {
+			http.ServeFileFS(w, req, d.UIAssets, "index.html")
+			return
+		}
+		http.NotFound(w, req)
+	})
+
 	if d.UIAssets != nil {
 		fileServer := http.FileServer(http.FS(d.UIAssets))
 		r.Handle("/assets/*", fileServer)
 		r.Handle("/favicon.ico", fileServer)
-		r.Handle("/vite.svg", fileServer)
+		r.Handle("/favicon.svg", fileServer)
 		r.Get("/*", func(w http.ResponseWriter, req *http.Request) {
+			if strings.HasPrefix(req.URL.Path, "/api/") ||
+				req.URL.Path == "/healthz" || req.URL.Path == "/readyz" {
+				writeProblem(w, d.Logger, problemArgs{
+					Status: http.StatusNotFound, Type: "not-found",
+					Detail: "no such resource",
+				})
+				return
+			}
 			http.ServeFileFS(w, req, d.UIAssets, "index.html")
 		})
 	}
