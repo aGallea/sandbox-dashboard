@@ -118,3 +118,33 @@ export async function fetchDetail<T>(kind: ResourceKind, namespace: string, name
   if (!res.ok) throw new Error(`${kind} detail failed: ${res.status}`);
   return res.json();
 }
+
+// ----- metrics types -------------------------------------------------------
+
+export type MetricRange = '15m' | '1h' | '6h' | '24h';
+
+export interface MetricPoint {
+  time: string;   // RFC 3339
+  value: number;
+}
+
+export interface MetricSeries {
+  label: string;
+  points: MetricPoint[];
+}
+
+export interface MetricResponse {
+  name: string;
+  title: string;
+  description: string;
+  unit: string;
+  range: MetricRange;
+  series: MetricSeries[];
+}
+
+export async function fetchMetric(name: string, range: MetricRange = '1h'): Promise<MetricResponse> {
+  const res = await fetch(`/api/v1/metrics/${encodeURIComponent(name)}?range=${range}`);
+  if (res.status === 503) throw new Error('prometheus-unconfigured');
+  if (!res.ok) throw new Error(`metric ${name} failed: ${res.status}`);
+  return res.json();
+}
