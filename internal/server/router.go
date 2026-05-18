@@ -52,6 +52,8 @@ func New(d Deps) http.Handler {
 			r.Get("/sandboxes/{namespace}/{name}", handleSandboxDetail(d))
 			r.Get("/claims", handleClaimList(d))
 			r.Get("/claims/{namespace}/{name}", handleClaimDetail(d))
+			r.Get("/templates", handleTemplateList(d))
+			r.Get("/templates/{namespace}/{name}", handleTemplateDetail(d))
 		}
 	})
 
