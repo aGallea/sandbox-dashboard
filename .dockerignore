@@ -1,0 +1,14 @@
+.git
+.github
+docs
+deploy
+node_modules
+ui/node_modules
+ui/dist
+internal/ui/dist
+dashboard
+*.test
+*.out
+.vscode
+.idea
+.DS_Store

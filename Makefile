@@ -36,3 +36,7 @@ clean:
 test-integration:
 	KUBEBUILDER_ASSETS="$$(setup-envtest use 1.31.x --bin-dir=$$HOME/.local/share/envtest -p path)" \
 		$(GO) test -tags=integration -count=1 ./internal/server/...
+
+.PHONY: docker
+docker:
+	docker build -t agent-sandbox-dashboard:local .
