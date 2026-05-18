@@ -1,4 +1,5 @@
 import { Link, NavLink, Route, Routes } from 'react-router-dom';
+import { MetricsPage } from './pages/Metrics';
 import { OverviewPage } from './pages/Overview';
 import { ResourceListPage } from './pages/ResourceList';
 import { RESOURCES } from './resources/config';
@@ -14,6 +15,9 @@ export function App() {
           <NavLink to="/" end className={navCls}>
             Overview
           </NavLink>
+          <NavLink to="/metrics" className={navCls}>
+            Metrics
+          </NavLink>
           {Object.values(RESOURCES).map((r) => (
             <NavLink key={r.kind} to={`/${r.kind}`} className={navCls}>
               {r.label}
@@ -24,6 +28,7 @@ export function App() {
       <main>
         <Routes>
           <Route path="/" element={<OverviewPage />} />
+          <Route path="/metrics" element={<MetricsPage />} />
           <Route path="/sandboxes" element={<ResourceListPage kind="sandboxes" />} />
           <Route path="/sandboxes/:namespace/:name" element={<ResourceListPage kind="sandboxes" />} />
           <Route path="/claims" element={<ResourceListPage kind="claims" />} />
