@@ -2,7 +2,7 @@
 
 Lightweight read-only operational dashboard for [kubernetes-sigs/agent-sandbox](https://github.com/kubernetes-sigs/agent-sandbox).
 
-**Status:** M2 complete (`v0.2.0`). M3 (metrics + Prometheus) next.
+**Status:** M3 complete (`v0.3.0`). M4 (Docker + kustomize install) next.
 
 See `docs/design.md` (forthcoming) for architecture.
 
