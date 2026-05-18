@@ -23,6 +23,8 @@ type Deps struct {
 	UIAssets fs.FS
 	// Logger is used for structured error logging. Optional; if nil, errors are not logged.
 	Logger *slog.Logger
+	// Prom is the optional Prometheus query client. If nil, /api/v1/metrics/* returns 503.
+	Prom QueryRanger
 }
 
 // New returns a fully wired chi router.
@@ -45,6 +47,13 @@ func New(d Deps) http.Handler {
 		}
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
+	})
+
+	// Metrics intentionally lives outside requireCacheSynced — Prometheus is
+	// independent of the informer cache, and the metrics page should remain
+	// usable during dashboard startup.
+	r.Route("/api/v1/metrics", func(mr chi.Router) {
+		mr.Get("/{name}", handleMetric(d))
 	})
 
 	r.Route("/api/v1", func(r chi.Router) {
