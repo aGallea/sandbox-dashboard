@@ -2,7 +2,7 @@
 
 Lightweight read-only operational dashboard for [kubernetes-sigs/agent-sandbox](https://github.com/kubernetes-sigs/agent-sandbox).
 
-**Status:** M1 — early development. Not yet ready for use.
+**Status:** M1 complete (`v0.1.0-alpha.1`). M2 (lists + detail) next.
 
 See `docs/design.md` (forthcoming) for architecture.
 
