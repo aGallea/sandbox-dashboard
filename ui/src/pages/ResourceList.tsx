@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useMemo } from 'react';
 import { fetchList } from '../api/client';
 import { RESOURCES } from '../resources/config';
@@ -12,14 +12,13 @@ interface Props {
 
 export function ResourceListPage({ kind }: Props) {
   const cfg = RESOURCES[kind];
-  const navigate = useNavigate();
   const params = useParams<{ namespace?: string; name?: string }>();
   const drawerOpen = !!(params.namespace && params.name);
 
-  // Read query-string filters from the current URL (no extra library).
-  const url = new URL(window.location.href);
-  const nsFilter = url.searchParams.get('namespace') ?? '';
-  const phaseFilter = url.searchParams.get('phase') ?? '';
+  const [searchParams, setSearchParams] = useSearchParams();
+  const nsFilter = searchParams.get('namespace') ?? '';
+  const phaseFilter = searchParams.get('phase') ?? '';
+  const search = searchParams.toString() ? `?${searchParams.toString()}` : '';
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['list', kind, nsFilter, phaseFilter],
@@ -38,10 +37,10 @@ export function ResourceListPage({ kind }: Props) {
   }, [data]);
 
   const updateFilter = (key: 'namespace' | 'phase', value: string) => {
-    const u = new URL(window.location.href);
-    if (value) u.searchParams.set(key, value);
-    else u.searchParams.delete(key);
-    navigate(`${u.pathname}${u.search}`);
+    const next = new URLSearchParams(searchParams);
+    if (value) next.set(key, value);
+    else next.delete(key);
+    setSearchParams(next, { replace: true });
   };
 
   return (
@@ -103,7 +102,7 @@ export function ResourceListPage({ kind }: Props) {
                   >
                     <td className="px-6 py-2">
                       <Link
-                        to={`/${cfg.kind}/${it.namespace}/${it.name}${url.search}`}
+                        to={`/${cfg.kind}/${it.namespace}/${it.name}${search}`}
                         className="block"
                       >
                         {it.name}
@@ -131,7 +130,7 @@ export function ResourceListPage({ kind }: Props) {
           kind={kind}
           namespace={params.namespace!}
           name={params.name!}
-          listUrl={`/${cfg.kind}${url.search}`}
+          listUrl={`/${cfg.kind}${search}`}
         />
       )}
     </div>
