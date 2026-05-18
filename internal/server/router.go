@@ -42,6 +42,7 @@ func New(d Deps) http.Handler {
 	})
 
 	r.Route("/api/v1", func(r chi.Router) {
+		r.Use(requireCacheSynced(d.CacheSynced))
 		if d.Client != nil {
 			r.Get("/overview", handleOverview(d.Client))
 		}
@@ -58,4 +59,18 @@ func New(d Deps) http.Handler {
 	}
 
 	return r
+}
+
+// requireCacheSynced is a middleware that returns 503 problem+json until the
+// informer cache has completed its initial sync.
+func requireCacheSynced(synced func() bool) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if synced == nil || !synced() {
+				writeProblem(w, http.StatusServiceUnavailable, "cache-not-synced", "informer cache is still syncing; retry shortly")
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }

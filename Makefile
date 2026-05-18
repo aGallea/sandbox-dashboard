@@ -2,7 +2,7 @@
 
 GO := go
 BINARY := dashboard
-PKG := ./...
+PKG := ./cmd/... ./internal/...
 
 all: test build
 
@@ -19,7 +19,7 @@ test:
 
 lint:
 	$(GO) vet $(PKG)
-	gofmt -l . | tee /dev/stderr | (! grep .)
+	gofmt -l cmd internal | tee /dev/stderr | (! grep .)
 
 run: build
 	./$(BINARY) --kubeconfig=$${KUBECONFIG:-$$HOME/.kube/config}

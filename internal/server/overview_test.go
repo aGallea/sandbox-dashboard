@@ -73,3 +73,15 @@ func TestOverview_AggregatesCountsByPhase(t *testing.T) {
 	require.Equal(t, int32(3), got.WarmPools.Replicas)
 	require.Equal(t, int32(2), got.WarmPools.ReadyReplicas)
 }
+
+func TestOverview_503WhenCacheNotSynced(t *testing.T) {
+	c := fake.NewClientBuilder().WithScheme(k8s.NewScheme()).Build()
+	r := New(Deps{Client: c, CacheSynced: func() bool { return false }})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/overview", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
+	require.Equal(t, "application/problem+json", rec.Header().Get("Content-Type"))
+}

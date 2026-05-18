@@ -5,11 +5,12 @@ import (
 	"context"
 	"errors"
 	"flag"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -47,9 +48,28 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
+	var wg sync.WaitGroup
+
 	// Start the manager (informers) in the background.
 	mgrErr := make(chan error, 1)
-	go func() { mgrErr <- mgr.Start(ctx) }()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		mgrErr <- mgr.Start(ctx)
+	}()
+
+	// Drive the cache-sync state from a single goroutine. WaitForCacheSync is
+	// blocking, so the HTTP probes/handlers must not call it directly — they
+	// read this atomic flag instead.
+	var cacheSynced atomic.Bool
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if mgr.GetCache().WaitForCacheSync(ctx) {
+			cacheSynced.Store(true)
+			logger.Info("informer cache synced")
+		}
+	}()
 
 	assets, err := ui.Assets()
 	if err != nil {
@@ -58,7 +78,7 @@ func main() {
 	}
 	router := server.New(server.Deps{
 		Client:      mgr.GetClient(),
-		CacheSynced: func() bool { return mgr.GetCache().WaitForCacheSync(ctx) },
+		CacheSynced: cacheSynced.Load,
 		UIAssets:    assets,
 	})
 
@@ -66,6 +86,8 @@ func main() {
 		Addr:              listenAddr,
 		Handler:           router,
 		ReadHeaderTimeout: 5 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 
 	srvErr := make(chan error, 1)
@@ -91,8 +113,8 @@ func main() {
 		logger.Error("graceful shutdown", "err", err)
 	}
 	cancel()
-	<-mgrErr
-	fmt.Fprintln(os.Stderr, "bye")
+	wg.Wait()
+	logger.Info("shutdown complete")
 }
 
 // slogToLogr adapts a slog.Logger to the logr.Logger that controller-runtime expects.
