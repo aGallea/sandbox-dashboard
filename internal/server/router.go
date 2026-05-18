@@ -54,6 +54,8 @@ func New(d Deps) http.Handler {
 			r.Get("/claims/{namespace}/{name}", handleClaimDetail(d))
 			r.Get("/templates", handleTemplateList(d))
 			r.Get("/templates/{namespace}/{name}", handleTemplateDetail(d))
+			r.Get("/warmpools", handleWarmPoolList(d))
+			r.Get("/warmpools/{namespace}/{name}", handleWarmPoolDetail(d))
 		}
 	})
 
