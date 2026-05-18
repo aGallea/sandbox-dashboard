@@ -107,23 +107,14 @@ func handleOverview(d Deps) http.HandlerFunc {
 func countByReady[T any](items []T, conds func(i int) []metav1.Condition) ResourceCounts {
 	out := ResourceCounts{Total: len(items)}
 	for i := range items {
-		switch readyState(conds(i)) {
-		case metav1.ConditionTrue:
+		switch readyPhase(conds(i)) {
+		case "Ready":
 			out.Ready++
-		case metav1.ConditionFalse:
+		case "NotReady":
 			out.NotReady++
 		default:
 			out.Unknown++
 		}
 	}
 	return out
-}
-
-func readyState(conds []metav1.Condition) metav1.ConditionStatus {
-	for i := range conds {
-		if conds[i].Type == "Ready" {
-			return conds[i].Status
-		}
-	}
-	return metav1.ConditionUnknown
 }
