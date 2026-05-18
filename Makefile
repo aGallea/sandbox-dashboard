@@ -28,3 +28,8 @@ ui-build: ui-install
 clean:
 	rm -f $(BINARY)
 	rm -rf ui/dist ui/node_modules
+
+.PHONY: test-integration
+test-integration:
+	KUBEBUILDER_ASSETS="$$(setup-envtest use 1.31.x --bin-dir=$$HOME/.local/share/envtest -p path)" \
+		$(GO) test -tags=integration -count=1 ./internal/server/...
