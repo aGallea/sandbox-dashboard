@@ -32,11 +32,12 @@ spec:
           imagePullPolicy: IfNotPresent
           args:
             - "--listen-addr=:8080"
-            # Set PROMETHEUS_URL via env to enable the metrics page.
-            # - "--prometheus-url=http://prometheus.monitoring.svc:9090"
-          env:
-            - name: PROMETHEUS_URL
-              value: "http://CHANGE_ME:9090"   # operator overrides via patch
+          # To enable the metrics page, add the PROMETHEUS_URL env var via a
+          # kustomize overlay or patch. Without it the /metrics endpoint
+          # returns 503 problem+json and the UI shows a placeholder.
+          # env:
+          #   - name: PROMETHEUS_URL
+          #     value: "http://prometheus.monitoring.svc:9090"
           ports:
             - name: http
               containerPort: 8080
