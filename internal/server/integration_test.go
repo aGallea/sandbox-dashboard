@@ -5,6 +5,7 @@ package server_test
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os/exec"
@@ -31,12 +32,11 @@ func crdPaths(t *testing.T) []string {
 	root := filepath.Join(filepath.Dir(here), "..", "..")
 	out, err := runCmd(t, root, "go", "list", "-m", "-f", "{{.Dir}}", "sigs.k8s.io/agent-sandbox")
 	require.NoError(t, err)
-	mod := out
 	// agent-sandbox v0.4.6 ships CRDs under k8s/crds, NOT config/crd/bases.
-	return []string{filepath.Join(mod, "k8s", "crds")}
+	return []string{filepath.Join(out, "k8s", "crds")}
 }
 
-func TestIntegration_OverviewEndToEnd(t *testing.T) {
+func TestIntegration_OverviewAndDetailViaCachedClient(t *testing.T) {
 	env := &envtest.Environment{
 		CRDDirectoryPaths:     crdPaths(t),
 		ErrorIfCRDPathMissing: true,
@@ -45,57 +45,121 @@ func TestIntegration_OverviewEndToEnd(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = env.Stop() })
 
-	scheme := k8s.NewScheme()
-	c, err := client.New(cfg, client.Options{Scheme: scheme})
+	// Build a real manager (the production code path).
+	mgr, err := k8s.NewManager(cfg)
 	require.NoError(t, err)
 
-	// minContainer is the minimum container spec required by CRD validation.
-	minContainer := corev1.Container{Name: "agent", Image: "busybox:latest"}
-	// minPodTemplate satisfies the required spec.podTemplate.spec.containers field.
-	minPodTemplate := v1alpha1.PodTemplate{
-		Spec: corev1.PodSpec{Containers: []corev1.Container{minContainer}},
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	mgrErr := make(chan error, 1)
+	go func() { mgrErr <- mgr.Start(ctx) }()
+
+	require.True(t, mgr.GetCache().WaitForCacheSync(ctx), "manager cache must sync")
+
+	// Create fixtures with an uncached direct client — synchronous writes.
+	directClient, err := client.New(cfg, client.Options{Scheme: k8s.NewScheme()})
+	require.NoError(t, err)
+
+	require.NoError(t, directClient.Create(ctx, mkSandbox("s1", "default")))
+	require.NoError(t, directClient.Create(ctx, mkTemplate("t1", "default")))
+	require.NoError(t, directClient.Create(ctx, mkClaim("c1", "default", "t1")))
+	require.NoError(t, directClient.Create(ctx, mkWarmPool("w1", "default", "t1")))
+
+	// Wait for the cached client to observe the writes.
+	require.Eventually(t, func() bool {
+		var sbs v1alpha1.SandboxList
+		if err := mgr.GetClient().List(ctx, &sbs); err != nil {
+			return false
+		}
+		return len(sbs.Items) == 1
+	}, 5*time.Second, 50*time.Millisecond, "Sandbox informer never observed s1")
+
+	r := server.New(server.Deps{
+		Client:      mgr.GetClient(),
+		CacheSynced: func() bool { return true },
+		Logger:      slog.New(slog.NewTextHandler(testWriter{t}, nil)),
+	})
+
+	// Overview
+	{
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/overview", nil)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusOK, rec.Code)
+		var got map[string]any
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+		t.Logf("overview: %+v", got)
+		require.EqualValues(t, 1, got["sandboxes"].(map[string]any)["total"])
+		require.EqualValues(t, 1, got["claims"].(map[string]any)["total"])
+		require.EqualValues(t, 1, got["templates"].(map[string]any)["total"])
+		require.EqualValues(t, 1, got["warmPools"].(map[string]any)["total"])
 	}
 
-	ctx := context.Background()
-	require.NoError(t, c.Create(ctx, &v1alpha1.Sandbox{
-		ObjectMeta: metav1.ObjectMeta{Name: "s1", Namespace: "default"},
+	// Sandbox detail
+	{
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/sandboxes/default/s1", nil)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusOK, rec.Code)
+		var got map[string]any
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+		summary := got["summary"].(map[string]any)
+		require.Equal(t, "s1", summary["name"])
+		require.Equal(t, "Sandbox", summary["kind"])
+	}
+
+	// 404 path
+	{
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/sandboxes/default/missing", nil)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusNotFound, rec.Code)
+	}
+
+	cancel()
+	<-mgrErr
+}
+
+// minContainer is the minimum container spec required by CRD validation.
+var minContainer = corev1.Container{Name: "agent", Image: "busybox:latest"}
+
+// minPodTemplate satisfies the required spec.podTemplate.spec.containers field.
+var minPodTemplate = v1alpha1.PodTemplate{
+	Spec: corev1.PodSpec{Containers: []corev1.Container{minContainer}},
+}
+
+func mkSandbox(name, ns string) *v1alpha1.Sandbox {
+	return &v1alpha1.Sandbox{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
 		Spec:       v1alpha1.SandboxSpec{PodTemplate: minPodTemplate},
-	}))
-	require.NoError(t, c.Create(ctx, &extv1alpha1.SandboxTemplate{
-		ObjectMeta: metav1.ObjectMeta{Name: "t1", Namespace: "default"},
+	}
+}
+
+func mkTemplate(name, ns string) *extv1alpha1.SandboxTemplate {
+	return &extv1alpha1.SandboxTemplate{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
 		Spec:       extv1alpha1.SandboxTemplateSpec{PodTemplate: minPodTemplate},
-	}))
-	require.NoError(t, c.Create(ctx, &extv1alpha1.SandboxClaim{
-		ObjectMeta: metav1.ObjectMeta{Name: "c1", Namespace: "default"},
+	}
+}
+
+func mkClaim(name, ns, templateRef string) *extv1alpha1.SandboxClaim {
+	return &extv1alpha1.SandboxClaim{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
 		Spec: extv1alpha1.SandboxClaimSpec{
-			TemplateRef: extv1alpha1.SandboxTemplateRef{Name: "t1"},
+			TemplateRef: extv1alpha1.SandboxTemplateRef{Name: templateRef},
 		},
-	}))
-	require.NoError(t, c.Create(ctx, &extv1alpha1.SandboxWarmPool{
-		ObjectMeta: metav1.ObjectMeta{Name: "w1", Namespace: "default"},
+	}
+}
+
+func mkWarmPool(name, ns, templateRef string) *extv1alpha1.SandboxWarmPool {
+	return &extv1alpha1.SandboxWarmPool{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
 		Spec: extv1alpha1.SandboxWarmPoolSpec{
 			Replicas:    1,
-			TemplateRef: extv1alpha1.SandboxTemplateRef{Name: "t1"},
+			TemplateRef: extv1alpha1.SandboxTemplateRef{Name: templateRef},
 		},
-	}))
-
-	time.Sleep(100 * time.Millisecond)
-
-	r := server.New(server.Deps{Client: c, CacheSynced: func() bool { return true }})
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/overview", nil)
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
-
-	require.Equal(t, http.StatusOK, rec.Code)
-	var got map[string]any
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
-	t.Logf("overview: %+v", got)
-
-	require.EqualValues(t, 1, got["sandboxes"].(map[string]any)["total"])
-	require.EqualValues(t, 1, got["claims"].(map[string]any)["total"])
-	require.EqualValues(t, 1, got["templates"].(map[string]any)["total"])
-	require.EqualValues(t, 1, got["warmPools"].(map[string]any)["total"])
+	}
 }
 
 func runCmd(t *testing.T, dir, name string, args ...string) (string, error) {
@@ -111,4 +175,11 @@ func stripTrailingNL(b []byte) []byte {
 		b = b[:len(b)-1]
 	}
 	return b
+}
+
+type testWriter struct{ t *testing.T }
+
+func (w testWriter) Write(p []byte) (int, error) {
+	w.t.Log(string(p))
+	return len(p), nil
 }
