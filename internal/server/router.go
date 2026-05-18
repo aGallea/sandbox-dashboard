@@ -2,6 +2,7 @@
 package server
 
 import (
+	"io/fs"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -15,6 +16,8 @@ type Deps struct {
 	Client client.Reader
 	// CacheSynced reports whether all informers have completed initial sync.
 	CacheSynced func() bool
+	// UIAssets is the embedded SPA filesystem. Optional; if nil, no SPA is served.
+	UIAssets fs.FS
 }
 
 // New returns a fully wired chi router.
@@ -43,6 +46,16 @@ func New(d Deps) http.Handler {
 			r.Get("/overview", handleOverview(d.Client))
 		}
 	})
+
+	if d.UIAssets != nil {
+		fileServer := http.FileServer(http.FS(d.UIAssets))
+		r.Handle("/assets/*", fileServer)
+		r.Handle("/favicon.ico", fileServer)
+		r.Handle("/vite.svg", fileServer)
+		r.Get("/*", func(w http.ResponseWriter, req *http.Request) {
+			http.ServeFileFS(w, req, d.UIAssets, "index.html")
+		})
+	}
 
 	return r
 }

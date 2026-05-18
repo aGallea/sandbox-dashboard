@@ -16,3 +16,7 @@ ui/dist/
 # Local dev
 .env
 .env.local
+
+# Embedded UI assets (built copy; keep placeholder)
+internal/ui/dist/*
+!internal/ui/dist/.gitkeep

@@ -19,6 +19,7 @@ import (
 
 	"github.com/aGallea/agent-sandbox-dashboard/internal/k8s"
 	"github.com/aGallea/agent-sandbox-dashboard/internal/server"
+	"github.com/aGallea/agent-sandbox-dashboard/internal/ui"
 )
 
 func main() {
@@ -50,9 +51,15 @@ func main() {
 	mgrErr := make(chan error, 1)
 	go func() { mgrErr <- mgr.Start(ctx) }()
 
+	assets, err := ui.Assets()
+	if err != nil {
+		logger.Error("load embedded UI assets", "err", err)
+		os.Exit(1)
+	}
 	router := server.New(server.Deps{
 		Client:      mgr.GetClient(),
 		CacheSynced: func() bool { return mgr.GetCache().WaitForCacheSync(ctx) },
+		UIAssets:    assets,
 	})
 
 	srv := &http.Server{
