@@ -7,12 +7,10 @@ PKG := ./cmd/... ./internal/...
 all: test build
 
 build: ui-build
-	rm -rf internal/ui/dist
-	cp -r ui/dist internal/ui/dist
-	$(GO) build -o $(BINARY) ./cmd/dashboard
-	rm -rf internal/ui/dist
-	mkdir -p internal/ui/dist
-	touch internal/ui/dist/.gitkeep
+	@trap 'rm -rf internal/ui/dist && mkdir -p internal/ui/dist && touch internal/ui/dist/.gitkeep' EXIT INT TERM; \
+		rm -rf internal/ui/dist && \
+		cp -r ui/dist internal/ui/dist && \
+		$(GO) build -o $(BINARY) ./cmd/dashboard
 
 test:
 	$(GO) test -race -count=1 $(PKG)
