@@ -22,7 +22,7 @@ interface Props {
 
 export function DetailDrawer({ kind, namespace, name, listUrl }: Props) {
   const navigate = useNavigate();
-  const close = () => navigate(listUrl);
+  const close = () => navigate(listUrl, { replace: true });
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['detail', kind, namespace, name],
