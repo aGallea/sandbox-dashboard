@@ -1,18 +1,132 @@
 # agent-sandbox-dashboard
 
 Lightweight read-only operational dashboard for [kubernetes-sigs/agent-sandbox](https://github.com/kubernetes-sigs/agent-sandbox).
+Aggregates `Sandbox`, `SandboxClaim`, `SandboxTemplate`, and `SandboxWarmPool` status across a cluster, plus Prometheus-backed charts for the controller's existing latency / rate metrics.
 
-**Status:** M3 complete (`v0.3.0`). M4 (Docker + kustomize install) next.
+## What it does
 
-See `docs/design.md` (forthcoming) for architecture.
+- **Overview** of all four CRDs with per-phase counts.
+- **List + detail drawer** per resource kind, with status conditions, spec (YAML), and recent events.
+- **Metrics page** with four charts (sandbox creation latency p50/p95, claim startup latency p50/p95, claim controller startup latency p50/p95, claim creation rate). Backed by a whitelisted Prometheus proxy — the SPA never sends raw PromQL.
+- Read-only RBAC. No write actions, no in-app auth (delegated to whatever ingress is in front).
+
+## Install
+
+The shipped manifests assume the `agent-sandbox-dashboard` namespace. Create it first, then apply the kustomize base:
+
+```bash
+kubectl create namespace agent-sandbox-dashboard
+kubectl apply -k deploy/kustomize/
+```
+
+Then port-forward to see it:
+
+```bash
+kubectl port-forward -n agent-sandbox-dashboard svc/agent-sandbox-dashboard 8080:80
+open http://localhost:8080
+```
+
+The dashboard exposes:
+- `/healthz`, `/readyz` — for kubelet probes (already wired into the Deployment).
+- `/api/v1/overview`, `/api/v1/{sandboxes,claims,templates,warmpools}` — read-only JSON.
+- `/api/v1/metrics/{name}` — whitelisted Prometheus proxy (503 when Prometheus is unconfigured).
+- `/` — the embedded SPA.
+
+### Configuring Prometheus (optional)
+
+The shipped Deployment leaves `PROMETHEUS_URL` unset, so `/metrics` returns 503 and the SPA renders a "Prometheus is not configured" placeholder. To enable charts, point the dashboard at a Prometheus reachable from inside the cluster.
+
+Create your own overlay:
+
+```bash
+mkdir -p deploy/kustomize/overlays/my-cluster
+cat > deploy/kustomize/overlays/my-cluster/kustomization.yaml <<'EOF'
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../   # the base
+
+patches:
+  - target:
+      kind: Deployment
+      name: agent-sandbox-dashboard
+    patch: |
+      - op: add
+        path: /spec/template/spec/containers/0/env
+        value:
+          - name: PROMETHEUS_URL
+            value: "http://prometheus.monitoring.svc:9090"
+EOF
+kubectl apply -k deploy/kustomize/overlays/my-cluster
+```
+
+If Prometheus is unreachable from a configured URL, the dashboard returns 502 problem+json and the SPA renders an inline error — the rest of the UI keeps working.
+
+### Exposing the dashboard
+
+The Service is `ClusterIP`. Wrap it in your existing ingress / IAP / oauth2-proxy stack. The dashboard ships with no built-in auth on purpose — that's an operator responsibility. Do not expose it directly via a public LoadBalancer.
+
+### Private image
+
+While the GHCR package is private (default while the repo is private), pulls require an `imagePullSecret`. Create one and uncomment the `imagePullSecrets` block in `deploy/kustomize/deployment.yaml`:
+
+```bash
+kubectl create secret docker-registry ghcr-pull \
+  --namespace=agent-sandbox-dashboard \
+  --docker-server=ghcr.io \
+  --docker-username=<your-gh-username> \
+  --docker-password=<a-classic-PAT-with-read:packages>
+```
+
+Once the image package is flipped to public, leave the `imagePullSecrets` line commented out.
 
 ## Development
 
 ```bash
-make test          # run all tests
-make run           # run against $KUBECONFIG
-make build         # build the binary
+# unit tests
+make test
+
+# Go vet + gofmt over cmd/ and internal/
+make lint
+
+# envtest integration test (needs setup-envtest on PATH)
+make test-integration
+
+# build the binary with embedded SPA
+make build
+./dashboard --kubeconfig=$HOME/.kube/config
 ```
+
+For UI hot-reload during development:
+
+```bash
+# terminal 1 — backend with API + watch
+./dashboard --kubeconfig=$HOME/.kube/config
+
+# terminal 2 — Vite dev server, proxies /api → :8080
+cd ui && npm run dev
+```
+
+Open http://localhost:5173.
+
+Local container build:
+
+```bash
+make docker
+docker run --rm -p 8080:8080 -v ~/.kube/config:/kubeconfig \
+  agent-sandbox-dashboard:local --kubeconfig=/kubeconfig
+```
+
+## Architecture
+
+Single Go binary. Embeds a controller-runtime read-only Manager (`get`/`list`/`watch` informers for the four CRDs + Pods + Events) and an HTTP server. The SPA (React + Vite + Tailwind) is built and embedded via `embed.FS`; one container image, one Deployment. All API reads go through the informer cache so the kube-apiserver only sees the long-running watches.
+
+The Prometheus integration is a *soft dependency*: the dashboard runs without it; the metrics page surfaces the unconfigured state per-chart.
+
+## Status
+
+`v0.1.0` — first general-availability release.
 
 ## License
 
