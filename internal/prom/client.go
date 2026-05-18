@@ -3,6 +3,7 @@ package prom
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	promapi "github.com/prometheus/client_golang/api"
@@ -18,31 +19,46 @@ type Point struct {
 
 // Client wraps the Prometheus HTTP API. It is safe for concurrent use.
 type Client struct {
-	api v1.API
+	api    v1.API
+	logger *slog.Logger // nil means warnings are dropped silently
 }
 
-// NewClient builds a Client against the given Prometheus base URL
-// (e.g. http://prometheus.monitoring.svc:9090).
-func NewClient(baseURL string) (*Client, error) {
+// Option configures a Client.
+type Option func(*Client)
+
+// WithLogger sets a structured logger for non-fatal warnings (partial data, lookback, etc.).
+func WithLogger(l *slog.Logger) Option { return func(c *Client) { c.logger = l } }
+
+// NewClient builds a Client against the given Prometheus base URL.
+// Optional behaviour (logger, etc.) is supplied via Option arguments.
+func NewClient(baseURL string, opts ...Option) (*Client, error) {
 	c, err := promapi.NewClient(promapi.Config{Address: baseURL})
 	if err != nil {
 		return nil, fmt.Errorf("prometheus client: %w", err)
 	}
-	return &Client{api: v1.NewAPI(c)}, nil
+	client := &Client{api: v1.NewAPI(c)}
+	for _, opt := range opts {
+		opt(client)
+	}
+	return client, nil
 }
 
 // QueryRange runs a PromQL query_range and returns the points from the first
-// series of the matrix result. Multi-series queries are not supported here —
-// each chart series gets its own QueryRange call so the BFF can label the
-// returned points without parsing PromQL.
+// series of the matrix result. Warnings emitted by Prometheus are forwarded
+// to the configured logger (if any) at WARN level.
 func (c *Client) QueryRange(ctx context.Context, query string, r Range) ([]Point, error) {
-	val, _, err := c.api.QueryRange(ctx, query, v1.Range{
+	val, warns, err := c.api.QueryRange(ctx, query, v1.Range{
 		Start: r.Start,
 		End:   r.End,
 		Step:  r.Step,
 	})
 	if err != nil {
 		return nil, err
+	}
+	if c.logger != nil {
+		for _, w := range warns {
+			c.logger.Warn("prometheus_warning", "query", query, "message", w)
+		}
 	}
 	matrix, ok := val.(model.Matrix)
 	if !ok {
@@ -54,10 +70,7 @@ func (c *Client) QueryRange(ctx context.Context, query string, r Range) ([]Point
 	stream := matrix[0]
 	out := make([]Point, 0, len(stream.Values))
 	for _, s := range stream.Values {
-		out = append(out, Point{
-			Time:  s.Timestamp.Time(),
-			Value: float64(s.Value),
-		})
+		out = append(out, Point{Time: s.Timestamp.Time(), Value: float64(s.Value)})
 	}
 	return out, nil
 }

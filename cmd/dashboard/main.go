@@ -44,7 +44,7 @@ func main() {
 	var promClient *prom.Client
 	if promURL != "" {
 		var err error
-		promClient, err = prom.NewClient(promURL)
+		promClient, err = prom.NewClient(promURL, prom.WithLogger(logger))
 		if err != nil {
 			logger.Error("create prometheus client", "err", err)
 			os.Exit(1)
