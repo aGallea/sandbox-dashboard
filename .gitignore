@@ -1,0 +1,18 @@
+# Go
+/dashboard
+*.test
+*.out
+
+# Node / Vite
+node_modules/
+ui/dist/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Local dev
+.env
+.env.local
