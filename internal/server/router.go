@@ -48,6 +48,8 @@ func New(d Deps) http.Handler {
 		r.Use(requireCacheSynced(d.CacheSynced, d.Logger))
 		if d.Client != nil {
 			r.Get("/overview", handleOverview(d))
+			r.Get("/sandboxes", handleSandboxList(d))
+			r.Get("/sandboxes/{namespace}/{name}", handleSandboxDetail(d))
 		}
 	})
 
