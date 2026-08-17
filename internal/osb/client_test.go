@@ -104,3 +104,51 @@ func TestNewClient_RejectsEmptyBaseURL(t *testing.T) {
 	_, err := NewClient("", "k")
 	require.Error(t, err)
 }
+
+func TestListSandboxes_WalksEveryPage(t *testing.T) {
+	var pagesServed []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		page := r.URL.Query().Get("page")
+		pagesServed = append(pagesServed, page)
+		switch page {
+		case "1":
+			_, _ = w.Write([]byte(`{"items":[{"id":"a","status":{"state":"Running"}}],
+				"pagination":{"page":1,"pageSize":200,"totalItems":3,"totalPages":3,"hasNextPage":true}}`))
+		case "2":
+			_, _ = w.Write([]byte(`{"items":[{"id":"b","status":{"state":"Running"}}],
+				"pagination":{"page":2,"pageSize":200,"totalItems":3,"totalPages":3,"hasNextPage":true}}`))
+		default:
+			_, _ = w.Write([]byte(`{"items":[{"id":"c","status":{"state":"Pending"}}],
+				"pagination":{"page":3,"pageSize":200,"totalItems":3,"totalPages":3,"hasNextPage":false}}`))
+		}
+	}))
+	defer srv.Close()
+
+	c, err := NewClient(srv.URL, "k")
+	require.NoError(t, err)
+	got, err := c.ListSandboxes(context.Background())
+	require.NoError(t, err)
+
+	require.Len(t, got, 3)
+	require.Contains(t, got, "a")
+	require.Contains(t, got, "b")
+	require.Contains(t, got, "c")
+	require.Equal(t, []string{"1", "2", "3"}, pagesServed)
+}
+
+func TestListSandboxes_StopsAtPageCapWhenServerAlwaysClaimsNextPage(t *testing.T) {
+	var requests int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		// A broken server that never stops claiming there is more.
+		_, _ = w.Write([]byte(`{"items":[{"id":"dup","status":{"state":"Running"}}],
+			"pagination":{"page":1,"pageSize":200,"totalItems":99999,"totalPages":99999,"hasNextPage":true}}`))
+	}))
+	defer srv.Close()
+
+	c, err := NewClient(srv.URL, "k")
+	require.NoError(t, err)
+	_, err = c.ListSandboxes(context.Background())
+	require.NoError(t, err, "hitting the cap is not an error; it is a bounded read")
+	require.Equal(t, maxPages, requests, "must stop at the page cap rather than loop forever")
+}

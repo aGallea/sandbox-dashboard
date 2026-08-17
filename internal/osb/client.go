@@ -20,6 +20,15 @@ import (
 // apiKeyHeader is the header the OpenSandbox server authenticates on.
 const apiKeyHeader = "OPEN-SANDBOX-API-KEY"
 
+// maxPageSize is the largest pageSize the OpenSandbox API accepts.
+const maxPageSize = 200
+
+// maxPages bounds the pagination loop.
+// ponytail: fixed cap, not a resumable cursor — 50 pages is 10,000 sandboxes,
+// far past any real fleet. If a cluster ever exceeds it, switch to streaming
+// pages into the caller instead of raising this number.
+const maxPages = 50
+
 // Status is OpenSandbox's own view of a sandbox's lifecycle state. State is one
 // of Pending, Running, Pausing, Paused, Resuming, Stopping, Terminated, Failed.
 type Status struct {
@@ -116,18 +125,30 @@ func (c *Client) get(ctx context.Context, path string) ([]byte, error) {
 }
 
 // ListSandboxes returns every sandbox OpenSandbox knows about, keyed by id.
+// It walks pages until the server reports no next page, or until maxPages is
+// reached. Reaching the cap is not an error: the caller gets a bounded,
+// possibly partial view, and a warning is logged.
 func (c *Client) ListSandboxes(ctx context.Context) (map[string]Sandbox, error) {
-	body, err := c.get(ctx, "/v1/sandboxes?pageSize=200&page=1")
-	if err != nil {
-		return nil, err
-	}
-	var lr listResponse
-	if err := json.Unmarshal(body, &lr); err != nil {
-		return nil, fmt.Errorf("opensandbox: decode sandbox list: %w", err)
-	}
-	out := make(map[string]Sandbox, len(lr.Items))
-	for _, s := range lr.Items {
-		out[s.ID] = s
+	out := make(map[string]Sandbox)
+	for page := 1; page <= maxPages; page++ {
+		body, err := c.get(ctx, fmt.Sprintf("/v1/sandboxes?pageSize=%d&page=%d", maxPageSize, page))
+		if err != nil {
+			return nil, err
+		}
+		var lr listResponse
+		if err := json.Unmarshal(body, &lr); err != nil {
+			return nil, fmt.Errorf("opensandbox: decode sandbox list page %d: %w", page, err)
+		}
+		for _, s := range lr.Items {
+			out[s.ID] = s
+		}
+		if !lr.Pagination.HasNextPage {
+			return out, nil
+		}
+		if page == maxPages && c.logger != nil {
+			c.logger.Warn("opensandbox_page_cap_reached",
+				"pages", maxPages, "collected", len(out), "server_total", lr.Pagination.TotalItems)
+		}
 	}
 	return out, nil
 }
