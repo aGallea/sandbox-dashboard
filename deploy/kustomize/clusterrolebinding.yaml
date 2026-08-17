@@ -1,15 +1,15 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: agent-sandbox-dashboard
+  name: sandbox-dashboard
   labels:
-    app.kubernetes.io/name: agent-sandbox-dashboard
+    app.kubernetes.io/name: sandbox-dashboard
     app.kubernetes.io/component: dashboard
 subjects:
   - kind: ServiceAccount
-    name: agent-sandbox-dashboard
-    namespace: agent-sandbox-dashboard
+    name: sandbox-dashboard
+    namespace: default
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: agent-sandbox-dashboard
+  name: sandbox-dashboard

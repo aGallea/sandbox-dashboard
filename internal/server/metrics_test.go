@@ -10,7 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/aGallea/agent-sandbox-dashboard/internal/prom"
+	"github.com/aGallea/sandbox-dashboard/internal/prom"
 )
 
 func TestMetrics_503WhenProm_Unconfigured(t *testing.T) {

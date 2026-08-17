@@ -18,10 +18,10 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 
-	"github.com/aGallea/agent-sandbox-dashboard/internal/k8s"
-	"github.com/aGallea/agent-sandbox-dashboard/internal/prom"
-	"github.com/aGallea/agent-sandbox-dashboard/internal/server"
-	"github.com/aGallea/agent-sandbox-dashboard/internal/ui"
+	"github.com/aGallea/sandbox-dashboard/internal/k8s"
+	"github.com/aGallea/sandbox-dashboard/internal/prom"
+	"github.com/aGallea/sandbox-dashboard/internal/server"
+	"github.com/aGallea/sandbox-dashboard/internal/ui"
 )
 
 func main() {

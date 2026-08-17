@@ -13,7 +13,7 @@ export function App() {
     <div className="min-h-screen">
       <header className="bg-slate-900 text-white px-6 py-3 flex items-baseline gap-6">
         <Link to="/" className="font-bold">
-          agent-sandbox-dashboard
+          sandbox-dashboard
         </Link>
         <nav className="flex gap-4 text-sm">
           <NavLink to="/" end className={navCls}>

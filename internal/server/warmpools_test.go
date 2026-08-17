@@ -11,7 +11,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/aGallea/agent-sandbox-dashboard/internal/k8s"
+	"github.com/aGallea/sandbox-dashboard/internal/k8s"
 	extv1alpha1 "sigs.k8s.io/agent-sandbox/extensions/api/v1alpha1"
 )
 

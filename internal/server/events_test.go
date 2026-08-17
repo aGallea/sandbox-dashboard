@@ -10,7 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/aGallea/agent-sandbox-dashboard/internal/k8s"
+	"github.com/aGallea/sandbox-dashboard/internal/k8s"
 )
 
 func TestEventsFor_FiltersByInvolvedObjectAndSortsNewestFirst(t *testing.T) {
