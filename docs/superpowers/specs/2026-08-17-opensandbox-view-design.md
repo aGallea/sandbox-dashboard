@@ -19,7 +19,7 @@ The dashboard should stay useful for sandboxes created by *any* creator, not jus
 
 ## What was measured
 
-Against `gke_algo-studio-main_us-central1_main` on 2026-08-17, with the OSB server
+Against `gke_algo-studio-main_us-central1_main` on 2026-08-17 at ~12:35, with the OSB server
 reached through `kubectl port-forward svc/opensandbox-server 18080:80`:
 
 | Observation | Value |
@@ -31,6 +31,10 @@ reached through `kubectl port-forward svc/opensandbox-server 18080:80`:
 | Join on CR name | 29/92 — **unusable** |
 | State pairs observed | `Running ↔ Ready`, 92/92 |
 
+A second measurement at 14:10 caught the cluster mid-incident and is recorded separately
+below; the join numbers there were 102 OSB records against 110 CRs, still matching 102/102
+on the label.
+
 Two findings drive the design:
 
 **The join key is the label, not the name.** 29 CRs are named `<uuid>` and 63 are named
@@ -38,18 +42,57 @@ Two findings drive the design:
 not a version cutover, so CR name cannot be used to correlate. The `opensandbox.io/id`
 label matched every record in both directions and is the contract this design relies on.
 
-**Absence of divergence today does not argue against showing it.** All 92 sandboxes agree
-right now because the fleet is at rest. Disagreement lives in transitions — creation,
-pause, expiry, teardown — and is only ever observable if both views are already being
-recorded. OSB additionally has states the Ready condition cannot structurally express:
-`Pending, Pausing, Paused, Resuming, Stopping, Terminated, Failed` all collapse into
-`NotReady`.
+**Divergence is real, and it is expensive.** The first measurement above caught a fleet at
+rest, where the two views could not disagree. Ninety minutes later the same cluster
+produced a live incident that is the strongest argument for this feature — see
+[Observed incident](#observed-incident-2026-08-17). OSB additionally has states the Ready
+condition cannot structurally express: `Pending, Pausing, Paused, Resuming, Stopping,
+Terminated, Failed` all collapse into `NotReady`.
 
 The one non-OSB CR (`instance-element-hq-element-web-…`, labels `app`,
 `swe-instance-id`) confirms multiple creators are already live in this cluster.
 
 Metadata completeness varies and the UI must tolerate it: 62 CRs carry the full set
 (`experiment`, `owner`, `project`, `session_id`, `team`), 30 carry only `session_id`.
+
+## Observed incident (2026-08-17)
+
+At 14:10, `opensandbox-server:v0.2.2` in algo-studio reported 10 of 102 sandboxes as
+`Pending / SANDBOX_PENDING / "Sandbox is pending scheduling"` while every one of their pods
+was `1/1 Running` and every CR read `Ready`, most within two seconds of creation.
+
+OSB's pod watch had died silently somewhere between 09:32:44 — its last
+`state: Running - Pod is Ready` log line — and 12:40. It logged no exception, no
+`ProtocolError`, no reconnect and no retry in 24 hours of output. It blocked on a dead
+stream for the full 600s per sandbox, then reported `Last state: Pending`: the last event it
+ever received. Meanwhile `diagnostics/inspect`, which performs an on-demand read rather
+than consuming the watch, returned correct live pod state throughout — so credentials,
+RBAC, networking and the API server were all healthy. The single replica had 23h uptime and
+zero restarts, so nothing ever forced a re-watch.
+
+The failure is not cosmetic. On timeout OSB **deletes the healthy sandbox**:
+
+```
+Timeout waiting for sandbox … Elapsed: 600.5s, Last state: Pending
+Creation failed, cleaning up sandbox …
+```
+
+**70 healthy sandboxes were destroyed in 80 minutes** (10 in the 12:00 hour, 40 in 13:00,
+20 in 14:00), beginning at 12:50:02. A `kubectl rollout restart` at 14:17 restored the
+watch, cleared all 10 stuck rows to `Running`, and rescued those 10 about a minute before
+their scheduled cleanup. The upstream defect — a watch with no timeout and no reconnect
+from the last `resourceVersion` — is unfixed, so this recurs on every watch drop.
+
+Three design consequences:
+
+1. **Divergence is worth a column.** This is precisely `osb.state: Pending` against
+   `phase: Ready`, sustained for minutes, on 10 rows at once.
+2. **A state diff alone is not enough.** The sharper signal was `lastTransitionAt` frozen at
+   `createdAt` while the CR moved on. Staleness is what distinguishes a dead watch from an
+   ordinary in-flight transition, and it is what should raise an alarm.
+3. **The threshold can be tight.** Pods reach Ready in roughly two seconds here, so any OSB
+   `Pending` older than about a minute is already anomalous. There is no need to tolerate a
+   wide normal band.
 
 ## Approach
 
@@ -95,7 +138,13 @@ func (c *Client) Diagnostics(ctx context.Context, id string) (*Diagnostics, erro
   already refetches every list at 5s. A mutex rather than `singleflight`: concurrent
   requests blocking on one upstream fetch is the same outcome with less machinery.
 
-## Divergence
+## Divergence and staleness
+
+Two independent signals. Divergence catches the two control planes disagreeing; staleness
+catches OSB not moving at all. The incident above needed both, and staleness was the
+sharper of the two.
+
+### Divergence
 
 An explicit agreement table, evaluated server-side so the UI only renders the marker:
 
@@ -108,6 +157,26 @@ An explicit agreement table, evaluated server-side so the UI only renders the ma
 `diverged` is true when the pair is not in the table. OSB `Pending` against CR `Ready`
 flags. Treating unrecognised states as "no opinion" means a future OSB state ships as a
 blank cell rather than a fleet-wide false alarm.
+
+### Staleness
+
+`stateAgeSeconds` is `now - osb.status.lastTransitionAt`, and `stale` is true when a
+**non-terminal** OSB state has sat there longer than a threshold (default 60s, env-tunable).
+
+Only non-terminal states are eligible. `Running`, `Terminated` and `Failed` are resting
+places — a sandbox legitimately runs for hours — so age against them means nothing.
+`Pending`, `Pausing`, `Resuming` and `Stopping` are transitions that should resolve in
+seconds; age against those is the signal. `Paused` is deliberately excluded: it is a state a
+caller chooses to hold.
+
+Why this earns its place next to `diverged`: during the incident every stuck sandbox had
+`lastTransitionAt == createdAt` exactly, because OSB never received a second event. A frozen
+timestamp identifies a dead watch, where a bare state mismatch could just as well be a
+sandbox mid-creation. It is also the one signal that still works when the CR side is
+unremarkable — no divergence to spot, just OSB standing still.
+
+The default 60s comes from measurement, not taste: pods here reached Ready about two seconds
+after creation, so a minute is already far outside normal.
 
 ## API changes
 
@@ -125,11 +194,14 @@ type ResourceSummary struct {
 }
 
 type OsbView struct {
-    State     string     `json:"state"`
-    Reason    string     `json:"reason,omitempty"`
-    Message   string     `json:"message,omitempty"`
-    ExpiresAt *time.Time `json:"expiresAt,omitempty"`
-    Diverged  bool       `json:"diverged"`
+    State            string     `json:"state"`
+    Reason           string     `json:"reason,omitempty"`
+    Message          string     `json:"message,omitempty"`
+    ExpiresAt        *time.Time `json:"expiresAt,omitempty"`
+    LastTransitionAt *time.Time `json:"lastTransitionAt,omitempty"`
+    StateAgeSeconds  int64      `json:"stateAgeSeconds"`
+    Diverged         bool       `json:"diverged"`
+    Stale            bool       `json:"stale"`
 }
 ```
 
@@ -142,8 +214,9 @@ distinguish. **The list never fails because OSB is down:**
 | `unreachable` | configured, fetch failed; CR data still served, UI shows a banner | 200 |
 | `ok` | joined, with `fetchedAt` | 200 |
 
-New filters follow the existing `?namespace=`/`?phase=` pattern: `?creator=` and
-`?osbState=`.
+New filters follow the existing `?namespace=`/`?phase=` pattern: `?creator=`, `?osbState=`,
+and `?stale=true`. `?stale=true` is the "show me the incident" query — during the event above
+it would have returned exactly the 10 affected rows out of 102.
 
 New route for the detail drawer: `GET /api/v1/sandboxes/{namespace}/{name}/osb`, which
 reads the CR to obtain its `opensandbox.io/id`, then returns OSB's
@@ -155,19 +228,27 @@ reads the CR to obtain its `opensandbox.io/id`, then returns OSB's
 The sandbox list gains **two always-present state columns** plus identity columns:
 
 ```
-NAME              CREATOR      PHASE      OSB STATE     OWNER
-sandbox-04c671…   opensandbox  Ready      Running       odeda
-sandbox-13d28e…   opensandbox  NotReady   Pending    ⚠  odeda
-sandbox-2eda72…   opensandbox  Ready      Pausing    ⚠  odeda
-instance-elem…    unknown      Ready      —             —
+NAME              CREATOR      PHASE      OSB STATE          OWNER
+sandbox-04c671…   opensandbox  Ready      Running            odeda
+sandbox-13d28e…   opensandbox  Ready      Pending ⚠ 9m ⏱     odeda
+sandbox-2eda72…   opensandbox  Ready      Pausing ⚠          odeda
+sandbox-9ff407…   opensandbox  NotReady   Pending            pazshepsels
+instance-elem…    unknown      Ready      —                  —
 ```
 
-`⚠` marks a `diverged` row. The OSB columns are driven off `ResourceConfig` in
-`resources/config.ts`, the same mechanism `showPhase` already uses to keep the shared
-table generic across the four kinds.
+`⚠` marks `diverged`; `⏱` with the state age marks `stale`. They are independent — row 2 is
+the incident signature (both), row 3 disagrees but is young, and row 4 is an ordinary
+in-flight creation that should raise nothing at all. That third case is why staleness is a
+separate flag rather than a stronger divergence rule.
 
-The detail drawer gains an **OpenSandbox** section — state, reason, message, expiry, and
-OSB's own event list beside the Kubernetes events already rendered.
+The OSB columns are driven off `ResourceConfig` in `resources/config.ts`, the same mechanism
+`showPhase` already uses to keep the shared table generic across the four kinds.
+
+The detail drawer gains an **OpenSandbox** section — state, reason, message, expiry, state
+age, and OSB's own event list beside the Kubernetes events already rendered. The incident
+showed why the event list matters: OSB's `diagnostics/events` is served by an on-demand read
+and stayed correct while the watch-fed state was frozen, so the two side by side localise the
+fault to the watch.
 
 ## Configuration
 
@@ -179,6 +260,7 @@ assigning to an interface-typed `Deps` field.
 | base URL | `--opensandbox-url` | `OPENSANDBOX_URL` |
 | API key | — | `OPENSANDBOX_API_KEY` |
 | cache TTL | — | `AGENT_SANDBOX_DASHBOARD_OSB_TTL` |
+| staleness threshold | — | `AGENT_SANDBOX_DASHBOARD_OSB_STALE_AFTER` (default `60s`) |
 
 The TTL keeps the `AGENT_SANDBOX_DASHBOARD_` prefix of the existing
 `AGENT_SANDBOX_DASHBOARD_METRICS_TIMEOUT` rather than introducing a second convention.
@@ -198,19 +280,29 @@ never a URL, never a log line, never a problem+json body.
 - `internal/server`: join by label; unmatched label yields no `osb` field; OSB unreachable
   returns 200 with `osb.status: unreachable`; OSB unconfigured omits the field entirely;
   divergence true and false cases; `creator` derived for both OSB and non-OSB CRs;
-  `?creator=` and `?osbState=` filters.
+  `?creator=`, `?osbState=` and `?stale=true` filters.
+- **Staleness**, with a clock injected so the tests stay deterministic: a young non-terminal
+  state is not stale; the same state past the threshold is; `Running`, `Terminated` and
+  `Failed` are never stale regardless of age; `Paused` is never stale; and the incident's
+  exact shape — `lastTransitionAt == createdAt`, OSB `Pending`, CR `Ready` — flags both
+  `diverged` and `stale`.
 
-Divergence cannot be reproduced against the live cluster — all 92 sandboxes agree, and
-manufacturing a disagreement would mean pausing someone's running sandbox. It is covered
-by a fake OSB server in unit tests only.
+The incident of 2026-08-17 supplies the fixture values for these cases. Reproducing it
+against a live cluster is still not possible on demand — it requires OSB's watch to break —
+so the assertions run against a fake OSB server seeded with the recorded timestamps.
 
 ## Verification
 
 Local rancher-desktop has no OSB server, so the end-to-end check runs the dashboard
 read-only against algo-studio: `--kubeconfig` on that context plus
 `--opensandbox-url=http://127.0.0.1:18080` through a port-forward to
-`svc/opensandbox-server`. 93 CRs against 92 OSB records exercises the matched path and the
-one unmatched-creator row.
+`svc/opensandbox-server`. 110 CRs against 102 OSB records exercises the matched path and the
+unmatched-creator rows.
+
+Because the fleet is normally healthy, the divergence and staleness columns will read clean
+in a live check. That is expected and is not evidence they work — those paths are proven by
+the unit tests seeded from the incident, and the live run only confirms the join, the
+identity columns, and graceful degradation when OSB is stopped.
 
 ## Out of scope
 
@@ -227,8 +319,8 @@ one unmatched-creator row.
 Roughly 500 lines total, past the 400-line guideline, so it ships as three PRs:
 
 1. **`internal/osb`** — client, pagination, cache, tests. No wiring; nothing user-visible. ~250 lines.
-2. **Server join** — DTO fields, divergence, filters, drawer route, `main.go` wiring, deployment env. ~200 lines.
-3. **UI** — the two state columns and `⚠`, identity columns, drawer diagnostics section. ~150 lines.
+2. **Server join** — DTO fields, divergence, staleness, filters, drawer route, `main.go` wiring, deployment env. ~230 lines.
+3. **UI** — the two state columns with `⚠`/`⏱`, identity columns, drawer diagnostics section. ~160 lines.
 
 ## Risks
 
@@ -236,9 +328,18 @@ Roughly 500 lines total, past the 400-line guideline, so it ships as three PRs:
   silently degrades to every row reading `creator: unknown` with no OSB state. Worth an
   explicit "OSB reported N sandboxes, matched M" log line so the gap is visible.
 - **Creator detection is label-inference, not ownership.** There are no
-  `ownerReferences` on any of the 93 CRs, so labels are the only available signal. A
+  `ownerReferences` on any of the CRs, so labels are the only available signal. A
   creator that stamps nothing recognisable reads as `unknown` — correct, but not
   informative.
 - **The agreement table encodes a judgment** about which OSB states imply not-ready. It is
-  in one function with one test per pair, so it is cheap to correct once a real
-  divergence is observed in the wild.
+  in one function with one test per pair, so it is cheap to correct as real divergences are
+  observed in the wild.
+- **`lastTransitionAt` is OSB's own timestamp, and staleness trusts it.** The incident showed
+  it frozen rather than wrong, which is the case this detects. A clock skew between OSB and
+  the dashboard, or a state OSB rewrites without advancing the timestamp, would show up as
+  false staleness. The threshold is env-tunable so a noisy install can be widened without a
+  redeploy.
+- **This dashboard cannot fix what it surfaces.** It is read-only by design, so the remedy
+  for a dead watch is still a `rollout restart` performed elsewhere. The value here is
+  cutting detection from "someone notices their eval results are short" to one glance at a
+  `⏱` column.
