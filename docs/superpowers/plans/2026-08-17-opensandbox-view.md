@@ -705,7 +705,12 @@ func TestDiagnostics_EscapesSandboxIDInPath(t *testing.T) {
 	require.NoError(t, err)
 	_, err = c.Diagnostics(context.Background(), "a/../b")
 	require.NoError(t, err)
-	require.NotContains(t, gotPath, "..", "the id must be escaped so it cannot traverse the path")
+
+	// What matters is that the separators are percent-encoded, so the id stays a
+	// single path segment. The literal ".." survives escaping and is harmless
+	// once it cannot be preceded by an unescaped slash.
+	require.Contains(t, gotPath, "a%2F..%2Fb", "the id's slashes must be escaped")
+	require.NotContains(t, gotPath, "/../", "no traversable segment may reach the server")
 }
 
 func TestDiagnostics_ErrorsWhenSandboxUnknown(t *testing.T) {
