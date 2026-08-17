@@ -12,17 +12,18 @@ Aggregates `Sandbox`, `SandboxClaim`, `SandboxTemplate`, and `SandboxWarmPool` s
 
 ## Install
 
-The shipped manifests assume the `sandbox-dashboard` namespace. Create it first, then apply the kustomize base:
+The shipped manifests deploy into the `default` namespace. Apply the kustomize base:
 
 ```bash
-kubectl create namespace sandbox-dashboard
 kubectl apply -k deploy/kustomize/
 ```
+
+To use a different namespace, override it in an overlay (`namespace: your-ns`) — the RBAC is a ClusterRole, so nothing else needs changing.
 
 Then port-forward to see it:
 
 ```bash
-kubectl port-forward -n sandbox-dashboard svc/sandbox-dashboard 8080:80
+kubectl port-forward -n default svc/sandbox-dashboard 8080:80
 open http://localhost:8080
 ```
 
@@ -73,7 +74,7 @@ While the GHCR package is private (default while the repo is private), pulls req
 
 ```bash
 kubectl create secret docker-registry ghcr-pull \
-  --namespace=sandbox-dashboard \
+  --namespace=default \
   --docker-server=ghcr.io \
   --docker-username=<your-gh-username> \
   --docker-password=<a-classic-PAT-with-read:packages>
