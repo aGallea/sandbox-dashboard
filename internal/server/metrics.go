@@ -10,7 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/aGallea/agent-sandbox-dashboard/internal/prom"
+	"github.com/aGallea/sandbox-dashboard/internal/prom"
 )
 
 // QueryRanger is the subset of *prom.Client the handler depends on.

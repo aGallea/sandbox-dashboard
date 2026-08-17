@@ -39,4 +39,4 @@ test-integration:
 
 .PHONY: docker
 docker:
-	docker build -t agent-sandbox-dashboard:local .
+	docker build -t sandbox-dashboard:local .

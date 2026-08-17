@@ -1,9 +1,9 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: agent-sandbox-dashboard
+  name: sandbox-dashboard
   labels:
-    app.kubernetes.io/name: agent-sandbox-dashboard
+    app.kubernetes.io/name: sandbox-dashboard
     app.kubernetes.io/component: dashboard
 rules:
   - apiGroups: ["agents.x-k8s.io"]

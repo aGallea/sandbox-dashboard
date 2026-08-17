@@ -1,4 +1,4 @@
-module github.com/aGallea/agent-sandbox-dashboard
+module github.com/aGallea/sandbox-dashboard
 
 go 1.26.3
 

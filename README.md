@@ -1,4 +1,4 @@
-# agent-sandbox-dashboard
+# sandbox-dashboard
 
 Lightweight read-only operational dashboard for [kubernetes-sigs/agent-sandbox](https://github.com/kubernetes-sigs/agent-sandbox).
 Aggregates `Sandbox`, `SandboxClaim`, `SandboxTemplate`, and `SandboxWarmPool` status across a cluster, plus Prometheus-backed charts for the controller's existing latency / rate metrics.
@@ -12,17 +12,17 @@ Aggregates `Sandbox`, `SandboxClaim`, `SandboxTemplate`, and `SandboxWarmPool` s
 
 ## Install
 
-The shipped manifests assume the `agent-sandbox-dashboard` namespace. Create it first, then apply the kustomize base:
+The shipped manifests assume the `sandbox-dashboard` namespace. Create it first, then apply the kustomize base:
 
 ```bash
-kubectl create namespace agent-sandbox-dashboard
+kubectl create namespace sandbox-dashboard
 kubectl apply -k deploy/kustomize/
 ```
 
 Then port-forward to see it:
 
 ```bash
-kubectl port-forward -n agent-sandbox-dashboard svc/agent-sandbox-dashboard 8080:80
+kubectl port-forward -n sandbox-dashboard svc/sandbox-dashboard 8080:80
 open http://localhost:8080
 ```
 
@@ -50,7 +50,7 @@ resources:
 patches:
   - target:
       kind: Deployment
-      name: agent-sandbox-dashboard
+      name: sandbox-dashboard
     patch: |
       - op: add
         path: /spec/template/spec/containers/0/env
@@ -73,7 +73,7 @@ While the GHCR package is private (default while the repo is private), pulls req
 
 ```bash
 kubectl create secret docker-registry ghcr-pull \
-  --namespace=agent-sandbox-dashboard \
+  --namespace=sandbox-dashboard \
   --docker-server=ghcr.io \
   --docker-username=<your-gh-username> \
   --docker-password=<a-classic-PAT-with-read:packages>
@@ -115,7 +115,7 @@ Local container build:
 ```bash
 make docker
 docker run --rm -p 8080:8080 -v ~/.kube/config:/kubeconfig \
-  agent-sandbox-dashboard:local --kubeconfig=/kubeconfig
+  sandbox-dashboard:local --kubeconfig=/kubeconfig
 ```
 
 ## Architecture
