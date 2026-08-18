@@ -82,6 +82,22 @@ func creatorFor(labels map[string]string) string {
 // the four: measured on the live cluster, 166 of 166 sandboxes carried
 // session_id while none carried owner/team/experiment, which the eval harness
 // stamps only for some workloads.
+//
+// Owner is accepted under two keys because the fleet has no single convention:
+// the domain-qualified ai21.com/owner and the bare owner. Neither appeared on
+// the 252 sandboxes measured in algo-studio, so this only pays off on fleets
+// whose harness stamps one of them.
 func identityFor(labels map[string]string) (owner, team, experiment, sessionID string) {
-	return labels["owner"], labels["team"], labels["experiment"], labels["session_id"]
+	return firstLabel(labels, "ai21.com/owner", "owner"),
+		labels["team"], labels["experiment"], labels["session_id"]
+}
+
+// firstLabel returns the first key that is present and non-empty.
+func firstLabel(labels map[string]string, keys ...string) string {
+	for _, k := range keys {
+		if v := labels[k]; v != "" {
+			return v
+		}
+	}
+	return ""
 }

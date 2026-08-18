@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   fetchDetail,
@@ -11,6 +12,7 @@ import {
   type OsbView,
 } from '../api/client';
 import { ConditionsTable } from './ConditionsTable';
+import { Loading } from './Loading';
 import { EventsList } from './EventsList';
 import { YamlBlock } from './YamlBlock';
 
@@ -22,9 +24,45 @@ interface Props {
   listUrl: string;
 }
 
+const MIN_WIDTH = 360;
+const DEFAULT_WIDTH = 576;
+const WIDTH_KEY = 'drawerWidth';
+const clampWidth = (w: number) =>
+  Math.round(Math.min(Math.max(w, MIN_WIDTH), window.innerWidth - 120));
+
 export function DetailDrawer({ kind, namespace, name, listUrl }: Props) {
   const navigate = useNavigate();
   const close = () => navigate(listUrl, { replace: true });
+
+  const [width, setWidth] = useState(
+    () => Number(localStorage.getItem(WIDTH_KEY)) || DEFAULT_WIDTH,
+  );
+
+  // Dragging the left edge widens the drawer. Tracked in a local rather than
+  // read back from state so the persisted value is the one the drag ended on.
+  const startResize = (e: React.PointerEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = width;
+    let latest = startWidth;
+    const onMove = (ev: PointerEvent) => {
+      latest = clampWidth(startWidth + (startX - ev.clientX));
+      setWidth(latest);
+    };
+    const onUp = () => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      localStorage.setItem(WIDTH_KEY, String(latest));
+    };
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+  };
+
+  const nudge = (by: number) => {
+    const next = clampWidth(width + by);
+    setWidth(next);
+    localStorage.setItem(WIDTH_KEY, String(next));
+  };
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['detail', kind, namespace, name],
@@ -37,8 +75,26 @@ export function DetailDrawer({ kind, namespace, name, listUrl }: Props) {
     refetchInterval: 10_000,
   });
 
+  // Overlays the list rather than sitting beside it: the table keeps its full
+  // width, so opening a row never reflows the columns underneath.
   return (
-    <aside className="w-[36rem] max-w-full bg-white border-l border-slate-200 shadow-xl overflow-y-auto">
+    <aside
+      className="absolute inset-y-0 right-0 z-40 flex max-w-full bg-white border-l border-slate-200 shadow-xl"
+      style={{ width }}
+    >
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize detail panel"
+        tabIndex={0}
+        onPointerDown={startResize}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowLeft') nudge(40);
+          else if (e.key === 'ArrowRight') nudge(-40);
+        }}
+        className="w-1.5 shrink-0 cursor-col-resize hover:bg-slate-300 focus:bg-slate-400 focus:outline-none"
+      />
+      <div className="flex-1 overflow-y-auto">
       <header className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
         <div>
           <div className="text-xs text-slate-500">{kind}</div>
@@ -54,7 +110,7 @@ export function DetailDrawer({ kind, namespace, name, listUrl }: Props) {
         </button>
       </header>
 
-      {isLoading && <div className="p-4 text-sm text-slate-500">Loading…</div>}
+        {isLoading && <Loading className="p-4" />}
       {error && (
         <div className="p-4 text-sm text-red-700">
           {(error as Error).message === 'not-found'
@@ -72,7 +128,8 @@ export function DetailDrawer({ kind, namespace, name, listUrl }: Props) {
           {kind === 'templates' && <TemplateBody d={data as TemplateDetail} />}
           {kind === 'warmpools' && <WarmPoolBody d={data as WarmPoolDetail} />}
         </div>
-      )}
+        )}
+      </div>
     </aside>
   );
 }
@@ -215,6 +272,7 @@ function OsbSection({
       {!diagnosticsInapplicable && (
         <div>
           <h3 className="text-sm font-semibold mb-2">Diagnostics (read on demand)</h3>
+          {isFetching && !data && !error && <Loading label="Reading diagnostics…" />}
           {error && !data && <div className="text-sm text-red-700">{msg}</div>}
           {error && data && (
             <div className="text-sm text-amber-700">

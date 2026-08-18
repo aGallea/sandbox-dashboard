@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { fetchOverview, type OverviewResponse } from '../api/client';
+import { Loading } from '../components/Loading';
 
 export function OverviewPage() {
   const { data, isLoading, error } = useQuery<OverviewResponse>({
@@ -8,7 +9,7 @@ export function OverviewPage() {
     refetchInterval: 5000,
   });
 
-  if (isLoading) return <div className="p-6">Loading…</div>;
+  if (isLoading) return <Loading className="p-6" />;
   if (error) return <div className="p-6 text-red-700">Error: {(error as Error).message}</div>;
   if (!data) return null;
 
