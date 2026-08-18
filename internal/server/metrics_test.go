@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -81,6 +82,9 @@ type stubProm struct {
 	points  map[string][]prom.Point
 	err     error
 	slowFor time.Duration
+
+	mu    sync.Mutex
+	asked []string
 }
 
 func (s *stubProm) Query(context.Context, string, time.Time) ([]prom.Sample, error) {
@@ -88,6 +92,9 @@ func (s *stubProm) Query(context.Context, string, time.Time) ([]prom.Sample, err
 }
 
 func (s *stubProm) QueryRange(ctx context.Context, q string, _ prom.Range) ([]prom.Point, error) {
+	s.mu.Lock()
+	s.asked = append(s.asked, q)
+	s.mu.Unlock()
 	if s.slowFor > 0 {
 		select {
 		case <-time.After(s.slowFor):
@@ -121,4 +128,61 @@ func TestMetrics_502OnSlowProm(t *testing.T) {
 		"a per-series timeout should surface as 502 (took %s)", elapsed)
 	require.Equal(t, "application/problem+json", rec.Header().Get("Content-Type"))
 	require.Less(t, elapsed, 500*time.Millisecond, "request should fail fast on timeout, not wait for slowFor")
+}
+
+func TestMetricCatalog_ListsSectionsInReadingOrder(t *testing.T) {
+	r := New(Deps{CacheSynced: func() bool { return true }, Prom: &stubProm{}})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/metrics", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var got MetricCatalog
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Len(t, got.Sections, 3)
+	require.Equal(t, "Fleet", got.Sections[0].Name)
+	require.Equal(t, "Controller", got.Sections[1].Name)
+	require.Equal(t, "Claims", got.Sections[2].Name)
+	require.NotEmpty(t, got.Sections[2].Note, "the Claims section has to explain why it can be empty")
+
+	first := got.Sections[0].Metrics[0]
+	require.Equal(t, "fleet_size", first.Name)
+	require.Equal(t, "Sandboxes", first.Title)
+	require.Equal(t, "sandboxes", first.Unit)
+	require.NotEmpty(t, first.Description)
+}
+
+// The whole point of the whitelist is that the browser never holds PromQL.
+func TestMetricCatalog_LeaksNoPromQL(t *testing.T) {
+	r := New(Deps{CacheSynced: func() bool { return true }, Prom: &stubProm{}})
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/metrics", nil))
+
+	body := rec.Body.String()
+	for _, fragment := range []string{"histogram_quantile", "kube_pod_labels", "agent_sandboxes", "sum(rate("} {
+		require.NotContains(t, body, fragment)
+	}
+}
+
+// The catalog is static, so the page can render its shape — and each chart's own
+// "Prometheus is not configured" state — even with no Prometheus behind it.
+func TestMetricCatalog_ServedWithoutPrometheus(t *testing.T) {
+	r := New(Deps{CacheSynced: func() bool { return true }})
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/metrics", nil))
+	require.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestMetrics_UsesTheConfiguredControllerJob(t *testing.T) {
+	stub := &stubProm{}
+	r := New(Deps{
+		CacheSynced: func() bool { return true },
+		Prom:        stub,
+		Metrics:     prom.NewRegistry("my-controller"),
+	})
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/metrics/controller_queue_wait", nil))
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.NotEmpty(t, stub.asked)
+	require.Contains(t, stub.asked[0], `job="my-controller"`)
 }

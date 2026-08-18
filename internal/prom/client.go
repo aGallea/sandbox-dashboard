@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
 	"time"
 
 	promapi "github.com/prometheus/client_golang/api"
@@ -101,10 +102,25 @@ func (c *Client) QueryRange(ctx context.Context, query string, r Range) ([]Point
 	if len(matrix) == 0 {
 		return []Point{}, nil
 	}
+	// Every registry query is written to return a single series — one line per
+	// Series entry. More than one means a query grew a label dimension, and
+	// silently charting the first of them would be worse than saying so.
+	if len(matrix) > 1 && c.logger != nil {
+		c.logger.Warn("prometheus_multiple_series",
+			"query", query, "series", len(matrix), "charted", 1)
+	}
 	stream := matrix[0]
 	out := make([]Point, 0, len(stream.Values))
 	for _, s := range stream.Values {
-		out = append(out, Point{Time: s.Timestamp.Time(), Value: float64(s.Value)})
+		v := float64(s.Value)
+		// A histogram_quantile over a window with no observations is NaN, and a
+		// ratio over zero is ±Inf. Neither is a reading, and neither survives
+		// JSON encoding — which turned a chart with one quiet stretch into a 200
+		// with an empty body. Absence of a point is the honest answer.
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			continue
+		}
+		out = append(out, Point{Time: s.Timestamp.Time(), Value: v})
 	}
 	return out, nil
 }

@@ -123,6 +123,7 @@ func main() {
 	}
 	deps := server.Deps{
 		Client:        mgr.GetClient(),
+		Metrics:       prom.NewRegistry(envOr("AGENT_SANDBOX_DASHBOARD_CONTROLLER_JOB", prom.DefaultControllerJob)),
 		CacheSynced:   cacheSynced.Load,
 		UIAssets:      assets,
 		Logger:        logger,
@@ -195,6 +196,14 @@ func (a osbAdapter) Diagnostics(ctx context.Context, id string) (osb.Diagnostics
 
 // durationFromEnv reads a Go duration string (e.g. "10s") from the environment,
 // returning def when unset or invalid.
+// envOr returns the environment value for key, or def when unset or empty.
+func envOr(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+
 func durationFromEnv(key string, def time.Duration) time.Duration {
 	v, ok := os.LookupEnv(key)
 	if !ok {

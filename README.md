@@ -7,7 +7,7 @@ Aggregates `Sandbox`, `SandboxClaim`, `SandboxTemplate`, and `SandboxWarmPool` s
 
 - **Overview** of the whole fleet: per-CRD counters, a triage strip, one cell per sandbox ordered by age, reserved-against-used meters, share and runtime breakdowns, and a per-group resource footprint.
 - **List + detail drawer** per resource kind, with status conditions, spec (YAML), recent events, and — for sandboxes, when configured — OpenSandbox's own lifecycle state alongside the Kubernetes Ready condition.
-- **Metrics page** with four charts (sandbox creation latency p50/p95, claim startup latency p50/p95, claim controller startup latency p50/p95, claim creation rate). Backed by a whitelisted Prometheus proxy — the SPA never sends raw PromQL.
+- **Metrics page** with ten charts in three sections — fleet size and reserved-against-used over time, controller reconcile latency / throughput / queue wait, and the claim-path latencies. Backed by a whitelisted Prometheus proxy — the SPA never sends raw PromQL.
 - Read-only RBAC. No write actions, no in-app auth (delegated to whatever ingress is in front).
 
 ## Install
@@ -54,6 +54,35 @@ into Other. The selection lives in the URL (`?by=node`), so a view can be shared
 
 **Reserved against used** and the used half of the footprint bars need Prometheus. Without it
 those panels say so and the rest of the page is unaffected.
+
+### The metrics page
+
+Three sections, served from the registry in `internal/prom/registry.go` via
+`GET /api/v1/metrics` so the SPA holds no second copy of the list:
+
+| Section | Charts | Source |
+|---|---|---|
+| Fleet | sandboxes (ready / not ready), expired sandboxes, CPU and memory reserved-against-used | the controller's `agent_sandboxes` gauge; cAdvisor and kube-state-metrics for the pods |
+| Controller | reconcile latency p50/p95, reconcile throughput and errors, work queue wait p95 | `controller_runtime_*` and `workqueue_*` |
+| Claims | claim startup latency, sandbox creation latency, claim creation rate | `agent_sandbox_*` histograms |
+
+Two things are worth knowing before reading an empty chart:
+
+- **The claim charts only fill in for claim-based launches.** The controller records those
+  histograms from its SandboxClaim reconciler alone, and they are `HistogramVec`s — with no
+  observation there is no series at all. A fleet that creates `Sandbox` objects directly (as
+  OpenSandbox does) leaves all three empty, and the page says so rather than drawing empty axes.
+- **The fleet resource charts need a kube-state-metrics that exposes pod labels.** They scope
+  cAdvisor to sandbox pods by joining `kube_pod_labels` on the controller's
+  `agents.x-k8s.io/sandbox-name-hash` label, which is exact where namespace matching would not
+  be. Without those label series the charts report no samples instead of a wrong number.
+
+The controller charts are scoped by scrape job, because `controller_runtime_*` is exported by
+every controller-runtime binary in the cluster. Override the job name if yours differs:
+
+| Env | Default | Purpose |
+|---|---|---|
+| `AGENT_SANDBOX_DASHBOARD_CONTROLLER_JOB` | `agent-sandbox-controller` | Prometheus `job` label of the agent-sandbox controller |
 
 ### Configuring Prometheus (optional)
 
