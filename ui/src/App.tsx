@@ -3,6 +3,7 @@ import { Link, NavLink, Route, Routes } from 'react-router-dom';
 import { OverviewPage } from './pages/Overview';
 import { ResourceListPage } from './pages/ResourceList';
 import { RESOURCES } from './resources/config';
+import { Loading } from './components/Loading';
 
 const MetricsPage = lazy(() =>
   import('./pages/Metrics').then((m) => ({ default: m.MetricsPage })),
@@ -35,7 +36,7 @@ export function App() {
           <Route
             path="/metrics"
             element={
-              <Suspense fallback={<div className="p-6 text-slate-500">Loading metrics…</div>}>
+              <Suspense fallback={<Loading className="p-6" label="Loading metrics…" />}>
                 <MetricsPage />
               </Suspense>
             }

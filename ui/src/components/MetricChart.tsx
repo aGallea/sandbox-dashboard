@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { Loading } from './Loading';
 import {
   LineChart,
   Line,
@@ -26,7 +27,11 @@ export function MetricChart({ name, range }: Props) {
   });
 
   if (isLoading) {
-    return <div className="h-64 flex items-center justify-center text-slate-500 text-sm">Loading…</div>;
+    return (
+      <div className="h-64 flex items-center justify-center">
+        <Loading />
+      </div>
+    );
   }
 
   if (error) {
