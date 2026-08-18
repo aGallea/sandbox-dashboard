@@ -196,6 +196,68 @@ func handleSandboxDetail(d Deps) http.HandlerFunc {
 	}
 }
 
+// SandboxOsbDetail is the JSON returned by GET /api/v1/sandboxes/{ns}/{name}/osb.
+type SandboxOsbDetail struct {
+	ID      string `json:"id"`
+	Summary string `json:"summary"`
+	Events  string `json:"events"`
+}
+
+func handleSandboxOsb(d Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if d.Osb == nil {
+			writeProblem(w, d.Logger, problemArgs{
+				Status: http.StatusServiceUnavailable,
+				Type:   "opensandbox-unconfigured",
+				Detail: "OpenSandbox URL not configured on this dashboard install",
+			})
+			return
+		}
+		ns := chi.URLParam(r, "namespace")
+		name := chi.URLParam(r, "name")
+
+		var sb v1alpha1.Sandbox
+		if err := d.Client.Get(r.Context(), client.ObjectKey{Namespace: ns, Name: name}, &sb); err != nil {
+			if apierrors.IsNotFound(err) {
+				writeProblem(w, d.Logger, problemArgs{
+					Status: http.StatusNotFound, Type: "sandbox-not-found",
+					Detail: "sandbox not found",
+				})
+				return
+			}
+			writeProblem(w, d.Logger, problemArgs{
+				Status:    http.StatusInternalServerError,
+				Type:      "get-sandbox",
+				Detail:    "could not load sandbox",
+				LogReason: err.Error(),
+			})
+			return
+		}
+
+		id := sb.Labels[OsbIDLabel]
+		if id == "" {
+			writeProblem(w, d.Logger, problemArgs{
+				Status: http.StatusNotFound,
+				Type:   "not-an-opensandbox-sandbox",
+				Detail: "this sandbox was not created by OpenSandbox",
+			})
+			return
+		}
+
+		diag, err := d.Osb.Diagnostics(r.Context(), id)
+		if err != nil {
+			writeProblem(w, d.Logger, problemArgs{
+				Status:    http.StatusBadGateway,
+				Type:      "opensandbox-unreachable",
+				Detail:    "could not load OpenSandbox diagnostics",
+				LogReason: err.Error(),
+			})
+			return
+		}
+		writeJSON(w, http.StatusOK, SandboxOsbDetail{ID: id, Summary: diag.Summary, Events: diag.Events})
+	}
+}
+
 // writeJSON writes v as JSON with Content-Type set.
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")

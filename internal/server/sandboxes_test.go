@@ -393,3 +393,74 @@ func TestSandboxes_List_StaleFilterYieldsEmptyNotErrorWhenOpenSandboxIsUnreachab
 		})
 	}
 }
+
+func TestSandboxOsb_ReturnsDiagnosticsForAnOpenSandboxSandbox(t *testing.T) {
+	objs := []client.Object{
+		&v1alpha1.Sandbox{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "sandbox-abc", Namespace: "default",
+				Labels: map[string]string{OsbIDLabel: "abc"},
+			},
+		},
+	}
+	o := &fakeOsb{diag: osb.Diagnostics{Summary: "Phase: Running", Events: "Normal Scheduled"}}
+
+	rec := httptest.NewRecorder()
+	osbTestDeps(t, objs, o, time.Now()).
+		ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/sandboxes/default/sandbox-abc/osb", nil))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var got struct {
+		ID      string `json:"id"`
+		Summary string `json:"summary"`
+		Events  string `json:"events"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Equal(t, "abc", got.ID)
+	require.Equal(t, "Phase: Running", got.Summary)
+	require.Equal(t, "Normal Scheduled", got.Events)
+}
+
+func TestSandboxOsb_Returns404WhenSandboxHasNoOpenSandboxLabel(t *testing.T) {
+	objs := []client.Object{
+		&v1alpha1.Sandbox{ObjectMeta: metav1.ObjectMeta{Name: "plain", Namespace: "default"}},
+	}
+	rec := httptest.NewRecorder()
+	osbTestDeps(t, objs, &fakeOsb{}, time.Now()).
+		ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/sandboxes/default/plain/osb", nil))
+	require.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestSandboxOsb_Returns503WhenOpenSandboxUnconfigured(t *testing.T) {
+	objs := []client.Object{
+		&v1alpha1.Sandbox{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "sandbox-abc", Namespace: "default",
+				Labels: map[string]string{OsbIDLabel: "abc"},
+			},
+		},
+	}
+	rec := httptest.NewRecorder()
+	osbTestDeps(t, objs, nil, time.Now()).
+		ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/sandboxes/default/sandbox-abc/osb", nil))
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
+}
+
+func TestSandboxOsb_Returns502AndHidesUpstreamDetailWhenFetchFails(t *testing.T) {
+	objs := []client.Object{
+		&v1alpha1.Sandbox{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "sandbox-abc", Namespace: "default",
+				Labels: map[string]string{OsbIDLabel: "abc"},
+			},
+		},
+	}
+	o := &fakeOsb{err: errors.New("boom at http://osb?key=secret-key")}
+
+	rec := httptest.NewRecorder()
+	osbTestDeps(t, objs, o, time.Now()).
+		ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/sandboxes/default/sandbox-abc/osb", nil))
+
+	require.Equal(t, http.StatusBadGateway, rec.Code)
+	require.NotContains(t, rec.Body.String(), "secret-key")
+}
