@@ -21,6 +21,13 @@ type ResourceSummary struct {
 	Experiment string   `json:"experiment,omitempty"`
 	SessionID  string   `json:"sessionId,omitempty"`
 	Osb        *OsbView `json:"osb,omitempty"`
+	Pod        *PodView `json:"pod,omitempty"`
+
+	// Labels is the sandbox's labels verbatim. The overview page derives its
+	// grouping dimensions from whatever keys the fleet actually carries, so no
+	// curated subset would do: the useful key on one cluster is `team`, on
+	// another `policy.ai21.com/preemptible`, and picking for them is guesswork.
+	Labels map[string]string `json:"labels,omitempty"`
 }
 
 // readyPhase maps the Ready condition's Status to the dashboard's phase string.
