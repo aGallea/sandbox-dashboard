@@ -83,8 +83,10 @@ resource name.
 
 `creator` is derived from that label alone, so `GET /api/v1/sandboxes` reports it —
 `opensandbox` when the label is present, `unknown` otherwise — whether or not OpenSandbox is
-configured. So are the identity fields read from labels: `owner`, `team`, `experiment` and
-`sessionId`.
+configured. The identity fields `owner`, `team`, `experiment` and `sessionId` are likewise read
+from labels and need no OpenSandbox configuration, but unlike `creator` they have no fallback
+value: each key is omitted when its label is absent. In practice `session_id` is the one most
+reliably present.
 
 Configuring OpenSandbox adds a per-row `osb` object:
 
@@ -94,8 +96,11 @@ Configuring OpenSandbox adds a per-row `osb` object:
   `AGENT_SANDBOX_DASHBOARD_OSB_STALE_AFTER` (default `60s`)
 
 plus a sibling `osb` object on the response reporting `status`, `reported` and `matched`.
-Filter with `?creator=`, `?osbState=` and `?stale=true`. The dashboard UI surfaces these as
-columns in a subsequent change; until then they are available from the API.
+Filter with `?creator=`, `?osbState=` and `?stale=true`. The sandbox list shows these as
+**Creator**, **Session**, **Owner** and **OSB State** columns, with `⚠` when OpenSandbox
+disagrees with the Ready condition and `⏱` plus the state's age when a transient OpenSandbox
+state has stopped advancing. Filter with the creator, OSB-state and stale-only controls above
+the table.
 
 The `osb` fields are the only part that depends on configuration: with `OPENSANDBOX_URL`
 unset they are absent entirely and the rest of the row is unaffected, and if OpenSandbox is
