@@ -42,7 +42,7 @@ func TestCreatorFor_IdentifiesOpenSandboxByLabel(t *testing.T) {
 }
 
 func TestIdentityFor_ReadsOwnerTeamExperimentFromLabels(t *testing.T) {
-	owner, team, experiment := identityFor(map[string]string{
+	owner, team, experiment, _ := identityFor(map[string]string{
 		"owner": "odeda", "team": "intelligent-gateway", "experiment": "tbv-v2",
 	})
 	require.Equal(t, "odeda", owner)
@@ -52,8 +52,29 @@ func TestIdentityFor_ReadsOwnerTeamExperimentFromLabels(t *testing.T) {
 
 func TestIdentityFor_ToleratesPartialMetadata(t *testing.T) {
 	// 30 of 92 sandboxes measured in algo-studio carried only session_id.
-	owner, team, experiment := identityFor(map[string]string{"session_id": "abc__env"})
+	owner, team, experiment, sessionID := identityFor(map[string]string{"session_id": "abc__env"})
 	require.Empty(t, owner)
 	require.Empty(t, team)
 	require.Empty(t, experiment)
+	require.Equal(t, "abc__env", sessionID)
+}
+
+func TestIdentityFor_ReadsSessionIDFromLabels(t *testing.T) {
+	_, _, _, sessionID := identityFor(map[string]string{"session_id": "regex-chess__33BjxVG__env"})
+	require.Equal(t, "regex-chess__33BjxVG__env", sessionID)
+}
+
+func TestIdentityFor_SessionIDIsTheOnlyIdentityOnAThinlyLabelledSandbox(t *testing.T) {
+	// Measured on the live cluster: 166 of 166 sandboxes carried only these three
+	// labels, so session_id is the sole identity signal available for that fleet.
+	labels := map[string]string{
+		"opensandbox.io/id":           "abc",
+		"policy.ai21.com/preemptible": "false",
+		"session_id":                  "pytorch-model-recovery__ocs9ngs__env",
+	}
+	owner, team, experiment, sessionID := identityFor(labels)
+	require.Empty(t, owner)
+	require.Empty(t, team)
+	require.Empty(t, experiment)
+	require.Equal(t, "pytorch-model-recovery__ocs9ngs__env", sessionID)
 }

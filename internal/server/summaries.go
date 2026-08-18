@@ -19,6 +19,7 @@ type ResourceSummary struct {
 	Owner      string   `json:"owner,omitempty"`
 	Team       string   `json:"team,omitempty"`
 	Experiment string   `json:"experiment,omitempty"`
+	SessionID  string   `json:"sessionId,omitempty"`
 	Osb        *OsbView `json:"osb,omitempty"`
 }
 
@@ -76,6 +77,11 @@ func creatorFor(labels map[string]string) string {
 // identityFor pulls the human-meaningful labels. These are read from the CR
 // rather than the OpenSandbox API, which carries identical values, so that an
 // OpenSandbox outage costs one column instead of the whole table.
-func identityFor(labels map[string]string) (owner, team, experiment string) {
-	return labels["owner"], labels["team"], labels["experiment"]
+//
+// sessionID is returned separately because it is the most reliably present of
+// the four: measured on the live cluster, 166 of 166 sandboxes carried
+// session_id while none carried owner/team/experiment, which the eval harness
+// stamps only for some workloads.
+func identityFor(labels map[string]string) (owner, team, experiment, sessionID string) {
+	return labels["owner"], labels["team"], labels["experiment"], labels["session_id"]
 }

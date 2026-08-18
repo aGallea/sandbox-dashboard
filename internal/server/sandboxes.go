@@ -79,7 +79,7 @@ func handleSandboxList(d Deps) http.HandlerFunc {
 			item := &list.Items[i]
 			phase := readyPhase(item.Status.Conditions)
 			creator := creatorFor(item.Labels)
-			owner, team, experiment := identityFor(item.Labels)
+			owner, team, experiment, sessionID := identityFor(item.Labels)
 
 			// Join before any display filter: `matched` must count join success
 			// across the whole fleet, not "joined and survived the filters".
@@ -126,6 +126,7 @@ func handleSandboxList(d Deps) http.HandlerFunc {
 				Owner:      owner,
 				Team:       team,
 				Experiment: experiment,
+				SessionID:  sessionID,
 				Osb:        view,
 			})
 		}

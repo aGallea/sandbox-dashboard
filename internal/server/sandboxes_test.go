@@ -474,3 +474,41 @@ func TestSandboxOsb_Returns502AndHidesUpstreamDetailWhenFetchFails(t *testing.T)
 	require.Equal(t, http.StatusBadGateway, rec.Code)
 	require.NotContains(t, rec.Body.String(), "secret-key")
 }
+
+func TestSandboxes_List_ExposesSessionIDForThinlyLabelledSandboxes(t *testing.T) {
+	objs := []client.Object{
+		&v1alpha1.Sandbox{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "sandbox-abc", Namespace: "default",
+				Labels: map[string]string{
+					OsbIDLabel:   "abc",
+					"session_id": "regex-chess__33BjxVG__env",
+				},
+			},
+			Status: v1alpha1.SandboxStatus{Conditions: []metav1.Condition{{Type: "Ready", Status: metav1.ConditionTrue}}},
+		},
+	}
+	rec := httptest.NewRecorder()
+	osbTestDeps(t, objs, &fakeOsb{list: map[string]osb.Sandbox{}}, time.Now()).
+		ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/sandboxes", nil))
+
+	var got sandboxListBody
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Len(t, got.Items, 1)
+	require.Equal(t, "regex-chess__33BjxVG__env", got.Items[0].SessionID)
+	require.Empty(t, got.Items[0].Owner, "this fleet stamps no owner label")
+}
+
+func TestSandboxes_List_OmitsSessionIDWhenLabelAbsent(t *testing.T) {
+	objs := []client.Object{
+		&v1alpha1.Sandbox{
+			ObjectMeta: metav1.ObjectMeta{Name: "plain", Namespace: "default"},
+			Status:     v1alpha1.SandboxStatus{Conditions: []metav1.Condition{{Type: "Ready", Status: metav1.ConditionTrue}}},
+		},
+	}
+	rec := httptest.NewRecorder()
+	osbTestDeps(t, objs, nil, time.Now()).
+		ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/sandboxes", nil))
+
+	require.NotContains(t, rec.Body.String(), "sessionId", "the key must be omitted, not empty")
+}
