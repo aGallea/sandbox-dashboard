@@ -77,19 +77,14 @@ func handleSandboxList(d Deps) http.HandlerFunc {
 		matched := 0
 		for i := range list.Items {
 			item := &list.Items[i]
-			if nsFilter != "" && item.Namespace != nsFilter {
-				continue
-			}
 			phase := readyPhase(item.Status.Conditions)
-			if phaseFilter != "" && phase != phaseFilter {
-				continue
-			}
 			creator := creatorFor(item.Labels)
-			if creatorFilter != "" && creator != creatorFilter {
-				continue
-			}
 			owner, team, experiment := identityFor(item.Labels)
 
+			// Join before any display filter: `matched` must count join success
+			// across the whole fleet, not "joined and survived the filters".
+			// Counting it after the filters made ?namespace= fire a false
+			// osb_join_incomplete warning.
 			var view *OsbView
 			if id := item.Labels[OsbIDLabel]; id != "" {
 				if s, ok := inventory[id]; ok {
@@ -98,6 +93,22 @@ func handleSandboxList(d Deps) http.HandlerFunc {
 					view = &v
 				}
 			}
+
+			if nsFilter != "" && item.Namespace != nsFilter {
+				continue
+			}
+			if phaseFilter != "" && phase != phaseFilter {
+				continue
+			}
+			if creatorFilter != "" && creator != creatorFilter {
+				continue
+			}
+			// osbState and stale filter on `view`, which is nil whenever the
+			// OpenSandbox inventory is unavailable (unconfigured or unreachable).
+			// In that case both filters yield an EMPTY items list — not "nothing
+			// matches", but "the join could not be computed". A client must check
+			// osb.status == "ok" before presenting an empty result under these
+			// filters as "nothing is stale" / "nothing in that state".
 			if osbStateFilter != "" && (view == nil || view.State != osbStateFilter) {
 				continue
 			}

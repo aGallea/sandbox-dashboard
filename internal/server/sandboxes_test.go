@@ -270,6 +270,8 @@ func TestSandboxes_List_OmitsOsbBlockEntirelyWhenUnconfigured(t *testing.T) {
 	osbTestDeps(t, objs, nil, time.Now()).
 		ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/sandboxes", nil))
 
+	require.NotContains(t, rec.Body.String(), "\"osb\"", "the osb key must be absent from the wire format, not present as null")
+
 	var got sandboxListBody
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
 	require.Len(t, got.Items, 1)
@@ -324,6 +326,70 @@ func TestSandboxes_List_FiltersByCreatorStateAndStaleness(t *testing.T) {
 				names[i] = got.Items[i].Name
 			}
 			require.ElementsMatch(t, tc.want, names)
+		})
+	}
+}
+
+// TestSandboxes_List_MatchedCountIgnoresDisplayFilters pins down that the join
+// (and therefore `matched`) is computed against the whole fleet, not against
+// whatever survives the namespace/phase/creator filters. Before this fix,
+// filtering out a joinable CR before the join lookup made `matched` undercount
+// and fired a false osb_join_incomplete warning even though every CR joined.
+func TestSandboxes_List_MatchedCountIgnoresDisplayFilters(t *testing.T) {
+	objs := []client.Object{
+		&v1alpha1.Sandbox{
+			ObjectMeta: metav1.ObjectMeta{Name: "a", Namespace: "ns1", Labels: map[string]string{OsbIDLabel: "a"}},
+			Status:     v1alpha1.SandboxStatus{Conditions: []metav1.Condition{{Type: "Ready", Status: metav1.ConditionTrue}}},
+		},
+		&v1alpha1.Sandbox{
+			ObjectMeta: metav1.ObjectMeta{Name: "b", Namespace: "ns2", Labels: map[string]string{OsbIDLabel: "b"}},
+			Status:     v1alpha1.SandboxStatus{Conditions: []metav1.Condition{{Type: "Ready", Status: metav1.ConditionTrue}}},
+		},
+	}
+	o := &fakeOsb{list: map[string]osb.Sandbox{
+		"a": {ID: "a", Status: osb.Status{State: "Running"}},
+		"b": {ID: "b", Status: osb.Status{State: "Running"}},
+	}}
+
+	rec := httptest.NewRecorder()
+	osbTestDeps(t, objs, o, time.Now()).
+		ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/sandboxes?namespace=ns1", nil))
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var got sandboxListBody
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Len(t, got.Items, 1, "the namespace filter still narrows the displayed items")
+	require.NotNil(t, got.Osb)
+	require.Equal(t, 2, got.Osb.Reported)
+	require.Equal(t, 2, got.Osb.Matched, "both CRs joined, even though one was filtered out of the response")
+}
+
+// TestSandboxes_List_StaleFilterYieldsEmptyNotErrorWhenOpenSandboxIsUnreachable
+// pins the contract for the outage+filter combination: osbState/stale filter
+// on the joined view, which is nil whenever the inventory could not be
+// fetched, so they report an empty items list rather than an error. Callers
+// must consult osb.status to tell "computed as empty" from "could not compute".
+func TestSandboxes_List_StaleFilterYieldsEmptyNotErrorWhenOpenSandboxIsUnreachable(t *testing.T) {
+	objs := []client.Object{
+		&v1alpha1.Sandbox{
+			ObjectMeta: metav1.ObjectMeta{Name: "a", Namespace: "default", Labels: map[string]string{OsbIDLabel: "a"}},
+			Status:     v1alpha1.SandboxStatus{Conditions: []metav1.Condition{{Type: "Ready", Status: metav1.ConditionTrue}}},
+		},
+	}
+	o := &fakeOsb{err: errors.New("dial tcp: connection refused")}
+	h := osbTestDeps(t, objs, o, time.Now())
+
+	for _, path := range []string{"/api/v1/sandboxes?stale=true", "/api/v1/sandboxes?osbState=Running"} {
+		t.Run(path, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+			require.Equal(t, http.StatusOK, rec.Code)
+
+			var got sandboxListBody
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+			require.Empty(t, got.Items, "with no inventory, every view is nil so the filter matches nothing")
+			require.NotNil(t, got.Osb)
+			require.Equal(t, "unreachable", got.Osb.Status, "status distinguishes an empty result from an outage")
 		})
 	}
 }

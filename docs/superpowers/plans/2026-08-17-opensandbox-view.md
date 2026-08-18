@@ -1572,19 +1572,14 @@ func handleSandboxList(d Deps) http.HandlerFunc {
 		matched := 0
 		for i := range list.Items {
 			item := &list.Items[i]
-			if nsFilter != "" && item.Namespace != nsFilter {
-				continue
-			}
 			phase := readyPhase(item.Status.Conditions)
-			if phaseFilter != "" && phase != phaseFilter {
-				continue
-			}
 			creator := creatorFor(item.Labels)
-			if creatorFilter != "" && creator != creatorFilter {
-				continue
-			}
 			owner, team, experiment := identityFor(item.Labels)
 
+			// Join before any display filter: `matched` must count join success
+			// across the whole fleet, not "joined and survived the filters".
+			// Counting it after the filters made ?namespace= report fewer matches
+			// than reported and fire a false osb_join_incomplete warning.
 			var view *OsbView
 			if id := item.Labels[OsbIDLabel]; id != "" {
 				if s, ok := inventory[id]; ok {
@@ -1593,6 +1588,19 @@ func handleSandboxList(d Deps) http.HandlerFunc {
 					view = &v
 				}
 			}
+
+			if nsFilter != "" && item.Namespace != nsFilter {
+				continue
+			}
+			if phaseFilter != "" && phase != phaseFilter {
+				continue
+			}
+			if creatorFilter != "" && creator != creatorFilter {
+				continue
+			}
+			// These two yield an empty list when the inventory is unavailable,
+			// because every view is nil. A client MUST check osb.status == "ok"
+			// before presenting an empty result as "nothing is stale".
 			if osbStateFilter != "" && (view == nil || view.State != osbStateFilter) {
 				continue
 			}
