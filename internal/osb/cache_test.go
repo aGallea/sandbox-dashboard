@@ -85,3 +85,45 @@ func TestCache_DoesNotCacheErrors(t *testing.T) {
 
 	require.Equal(t, int32(2), inner.calls.Load(), "a failed fetch must be retried, not cached")
 }
+
+func TestCache_MutatingReturnedMapDoesNotAffectCache(t *testing.T) {
+	inner := &fakeLister{result: map[string]Sandbox{"a": {ID: "a"}}}
+	now := time.Date(2026, 8, 17, 14, 0, 0, 0, time.UTC)
+	c := NewCache(inner, 5*time.Second, func() time.Time { return now })
+
+	got, err := c.ListSandboxes(context.Background())
+	require.NoError(t, err)
+	got["b"] = Sandbox{ID: "b"}
+
+	got2, err := c.ListSandboxes(context.Background())
+	require.NoError(t, err)
+	require.NotContains(t, got2, "b", "mutating a returned map must not leak into the cache or later callers")
+}
+
+func TestCache_NonPositiveTTLDisablesCaching(t *testing.T) {
+	inner := &fakeLister{result: map[string]Sandbox{"a": {ID: "a"}}}
+	now := time.Date(2026, 8, 17, 14, 0, 0, 0, time.UTC)
+	c := NewCache(inner, 0, func() time.Time { return now })
+
+	_, err := c.ListSandboxes(context.Background())
+	require.NoError(t, err)
+	_, err = c.ListSandboxes(context.Background())
+	require.NoError(t, err)
+
+	require.Equal(t, int32(2), inner.calls.Load(), "a non-positive TTL must disable caching")
+}
+
+func TestCache_CachesSuccessfulEmptyResult(t *testing.T) {
+	inner := &fakeLister{result: map[string]Sandbox{}}
+	now := time.Date(2026, 8, 17, 14, 0, 0, 0, time.UTC)
+	c := NewCache(inner, 5*time.Second, func() time.Time { return now })
+
+	got, err := c.ListSandboxes(context.Background())
+	require.NoError(t, err)
+	require.Empty(t, got)
+
+	_, err = c.ListSandboxes(context.Background())
+	require.NoError(t, err)
+
+	require.Equal(t, int32(1), inner.calls.Load(), "an empty but successful fetch must still be cached")
+}
