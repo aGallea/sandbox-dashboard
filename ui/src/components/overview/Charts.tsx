@@ -16,16 +16,7 @@ import {
   type Slice,
 } from '../../overview/aggregate';
 
-const AXIS = '#94a3b8';
-const GRID = '#e2e8f0';
-
-const tooltipStyle = {
-  fontSize: 12,
-  borderRadius: 8,
-  border: `1px solid ${GRID}`,
-  boxShadow: 'none',
-  padding: '4px 8px',
-};
+import { AXIS, GRID, HOVER, tooltipStyle } from '../../viz/palette';
 
 /**
  * Part-to-whole for one dimension. The legend carries the label, count and
@@ -167,7 +158,7 @@ export function AgeHistogram({ buckets }: { buckets: Bucket[] }) {
           <Tooltip
             contentStyle={tooltipStyle}
             formatter={(v: number) => [`${v} sandboxes`, 'up for']}
-            cursor={{ fill: '#f8fafc' }}
+            cursor={{ fill: HOVER }}
           />
           <Bar dataKey="count" radius={[4, 4, 0, 0]} isAnimationActive={false} label={countLabel}>
             {buckets.map((b) => (

@@ -11,13 +11,12 @@ import {
   CartesianGrid,
 } from 'recharts';
 import { fetchMetric, type MetricRange, type MetricResponse } from '../api/client';
+import { AXIS, GRID, SERIES, tooltipStyle } from '../viz/palette';
 
 interface Props {
   name: string;
   range: MetricRange;
 }
-
-const COLORS = ['#0f766e', '#b45309', '#7c3aed', '#475569'];
 
 export function MetricChart({ name, range }: Props) {
   const { data, isLoading, error } = useQuery({
@@ -51,6 +50,8 @@ export function MetricChart({ name, range }: Props) {
 }
 
 function Chart({ data }: { data: MetricResponse }) {
+  const empty = data.series.every((s) => s.points.length === 0);
+
   // Reshape: merge all series onto one row-per-timestamp object so Recharts
   // can render multiple lines.
   const byTime = new Map<string, Record<string, number | string>>();
@@ -66,28 +67,38 @@ function Chart({ data }: { data: MetricResponse }) {
 
   return (
     <div className="h-64">
-      <div className="flex items-baseline justify-between mb-1">
+      <div className="flex items-baseline justify-between mb-1 gap-3">
         <div>
           <h3 className="font-semibold text-sm">{data.title}</h3>
           <p className="text-xs text-slate-500">{data.description}</p>
         </div>
-        <span className="text-xs text-slate-500">{data.unit}</span>
+        <span className="shrink-0 text-xs text-slate-500">{data.unit}</span>
       </div>
+      {/* Axes with no line read as a broken chart. Prometheus holding no
+          samples for this window is a fact, so the chart says it. */}
+      {empty ? (
+        <div className="flex h-[85%] items-center justify-center">
+          <p className="text-sm text-slate-500">No samples in this range.</p>
+        </div>
+      ) : (
+      <>
       <ResponsiveContainer width="100%" height="85%">
         <LineChart data={rows} margin={{ top: 4, right: 8, bottom: 4, left: 0 }}>
-          <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" />
+          {/* Solid hairline: a dashed grid reads as a threshold when it is just a grid. */}
+          <CartesianGrid stroke={GRID} />
           <XAxis
             dataKey="time"
             type="number"
             domain={['dataMin', 'dataMax']}
             tickFormatter={(t) => new Date(t).toLocaleTimeString()}
-            stroke="#94a3b8"
+            stroke={AXIS}
             fontSize={11}
+            tickLine={false}
           />
-          <YAxis stroke="#94a3b8" fontSize={11} />
+          <YAxis stroke={AXIS} fontSize={11} tickLine={false} axisLine={false} />
           <Tooltip
             labelFormatter={(t) => new Date(t as number).toLocaleString()}
-            contentStyle={{ fontSize: 12 }}
+            contentStyle={tooltipStyle}
           />
           <Legend wrapperStyle={{ fontSize: 12 }} />
           {data.series.map((s, i) => (
@@ -95,7 +106,7 @@ function Chart({ data }: { data: MetricResponse }) {
               key={s.label}
               type="monotone"
               dataKey={s.label}
-              stroke={COLORS[i % COLORS.length]}
+              stroke={SERIES[i % SERIES.length]}
               strokeWidth={2}
               dot={false}
               isAnimationActive={false}
@@ -103,6 +114,8 @@ function Chart({ data }: { data: MetricResponse }) {
           ))}
         </LineChart>
       </ResponsiveContainer>
+      </>
+      )}
     </div>
   );
 }

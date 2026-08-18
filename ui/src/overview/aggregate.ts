@@ -7,24 +7,13 @@
  * sandboxes, move these rollups behind /api/v1/overview and send the totals.
  */
 import type { ResourceSummary, UsageResponse } from '../api/client';
+import { AGE_RAMP, OTHER_COLOR, SERIES, STATUS } from '../viz/palette';
 
 // ----- palette -------------------------------------------------------------
-// Validated with the data-viz palette validator against the #ffffff card
-// surface: the 5 categorical slots pass every gate (worst adjacent CVD ΔE 9.1),
-// as does the 5-step ordinal blue ramp. Three of the categorical fills sit under
-// 3:1 on white, so every chart using them ships visible labels.
+// The tokens live in one module so the overview and the metrics page draw from
+// the same validated system.
 
-export const SERIES = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4'];
-/** The folded tail is a leftover, not an identity — it never takes a hue. */
-export const OTHER_COLOR = '#94a3b8';
-/** Age is ordered, so it gets one hue light→dark rather than five identities. */
-export const AGE_RAMP = ['#86b6ef', '#5598e7', '#2a78d6', '#1c5cab', '#104281'];
-export const STATUS = {
-  ready: '#0ca30c',
-  pending: '#fab219',
-  failed: '#d03b3b',
-  idle: '#94a3b8',
-};
+export { SERIES, OTHER_COLOR, AGE_RAMP, STATUS } from '../viz/palette';
 
 export const OTHER_KEY = 'Other';
 

@@ -245,6 +245,30 @@ export interface MetricResponse {
   series: MetricSeries[];
 }
 
+export interface MetricInfo {
+  name: string;
+  title: string;
+  description: string;
+  unit: string;
+}
+
+export interface MetricSection {
+  name: string;
+  note?: string;
+  metrics: MetricInfo[];
+}
+
+export interface MetricCatalog {
+  sections: MetricSection[];
+}
+
+/** The charts this install offers, grouped for display. Served without Prometheus. */
+export async function fetchMetricCatalog(): Promise<MetricCatalog> {
+  const res = await fetch('/api/v1/metrics');
+  if (!res.ok) throw new Error(`metric catalog failed: ${res.status}`);
+  return res.json();
+}
+
 export async function fetchMetric(name: string, range: MetricRange = '1h'): Promise<MetricResponse> {
   const res = await fetch(`/api/v1/metrics/${encodeURIComponent(name)}?range=${range}`);
   if (res.status === 503) throw new Error('prometheus-unconfigured');
