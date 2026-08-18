@@ -38,6 +38,18 @@ spec:
           # env:
           #   - name: PROMETHEUS_URL
           #     value: "http://prometheus.monitoring.svc:9090"
+          # Optional OpenSandbox integration. Uncomment to show OpenSandbox's own
+          # lifecycle state next to the Kubernetes Ready condition. The API key is
+          # read from a Secret you create; the dashboard never reads Secrets via the
+          # API server, so no extra RBAC is needed.
+          # env:
+          #   - name: OPENSANDBOX_URL
+          #     value: "http://opensandbox-server.default.svc"
+          #   - name: OPENSANDBOX_API_KEY
+          #     valueFrom:
+          #       secretKeyRef:
+          #         name: opensandbox-server-api-key
+          #         key: api-key
           ports:
             - name: http
               containerPort: 8080

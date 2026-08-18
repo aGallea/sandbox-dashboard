@@ -64,6 +64,38 @@ kubectl apply -k deploy/kustomize/overlays/my-cluster
 
 If Prometheus is unreachable from a configured URL, the dashboard returns 502 problem+json and the SPA renders an inline error — the rest of the UI keeps working.
 
+### Configuring OpenSandbox (optional)
+
+When sandboxes are created by [OpenSandbox](https://github.com/open-sandbox), the dashboard
+can show OpenSandbox's own lifecycle state next to the Kubernetes Ready condition. The two
+can disagree — a sandbox whose pod is `Ready` may still be `Pending` to OpenSandbox — and
+that disagreement is worth seeing.
+
+```bash
+OPENSANDBOX_URL=http://opensandbox-server.default.svc \
+OPENSANDBOX_API_KEY=$(kubectl -n default get secret opensandbox-server-api-key \
+  -o jsonpath='{.data.api-key}' | base64 -d) \
+./dashboard --kubeconfig=$HOME/.kube/config
+```
+
+Sandboxes are matched to OpenSandbox records on the `opensandbox.io/id` label, not the
+resource name. The list gains three things:
+
+- a **Creator** column, so sandboxes from other creators stay legible
+- an **OSB State** column, marked `⚠` when it disagrees with the Ready condition
+- a **stale** marker (`⏱`) when OpenSandbox has not advanced a transient state within
+  `AGENT_SANDBOX_DASHBOARD_OSB_STALE_AFTER` (default `60s`). Filter with `?stale=true`.
+
+Both are optional and degrade quietly: with `OPENSANDBOX_URL` unset the columns disappear,
+and if OpenSandbox is unreachable the list still serves Kubernetes data with a warning.
+
+| Env | Default | Purpose |
+|---|---|---|
+| `OPENSANDBOX_URL` | unset | Base URL; unset disables the integration |
+| `OPENSANDBOX_API_KEY` | unset | Sent as the `OPEN-SANDBOX-API-KEY` header |
+| `AGENT_SANDBOX_DASHBOARD_OSB_TTL` | `5s` | How long the inventory is cached |
+| `AGENT_SANDBOX_DASHBOARD_OSB_STALE_AFTER` | `60s` | Staleness threshold |
+
 ### Exposing the dashboard
 
 The Service is `ClusterIP`. Wrap it in your existing ingress / IAP / oauth2-proxy stack. The dashboard ships with no built-in auth on purpose — that's an operator responsibility. Do not expose it directly via a public LoadBalancer.
