@@ -163,6 +163,11 @@ function OsbSection({ namespace, name }: { namespace: string; name: string }) {
     retry: false,
   });
 
+  // Render nothing until the query settles. The section legitimately does not
+  // apply to most sandboxes (404) or to an unconfigured install (503), so
+  // showing a heading first would make it flash and vanish on every one of them.
+  if (isLoading) return null;
+
   // Not an OpenSandbox sandbox, or OpenSandbox is not configured: show nothing
   // rather than an error the operator can do nothing about.
   const msg = (error as Error | null)?.message;
@@ -171,7 +176,6 @@ function OsbSection({ namespace, name }: { namespace: string; name: string }) {
   return (
     <section>
       <h3 className="text-sm font-semibold mb-2">OpenSandbox</h3>
-      {isLoading && <div className="text-sm text-slate-500">Loading…</div>}
       {error && <div className="text-sm text-red-700">{msg}</div>}
       {data && (
         <>
