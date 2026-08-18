@@ -156,17 +156,21 @@ function WarmPoolBody({ d }: { d: WarmPoolDetail }) {
 }
 
 function OsbSection({ namespace, name }: { namespace: string; name: string }) {
-  const { data, isLoading, error } = useQuery({
+  const { data, isFetching, error } = useQuery({
     queryKey: ['osb-detail', namespace, name],
     queryFn: () => fetchSandboxOsb(namespace, name),
-    refetchInterval: 10_000,
+    // Only poll once we actually have diagnostics. On any error the query keeps
+    // data undefined, which makes react-query reset status to "pending" on every
+    // refetch — that would blink a genuine error section out every 10s. It also
+    // avoids polling /osb forever for the many sandboxes OpenSandbox never created.
+    refetchInterval: (query) => (query.state.data ? 10_000 : false),
     retry: false,
   });
 
   // Render nothing until the query settles. The section legitimately does not
   // apply to most sandboxes (404) or to an unconfigured install (503), so
   // showing a heading first would make it flash and vanish on every one of them.
-  if (isLoading) return null;
+  if (isFetching && !data && !error) return null;
 
   // Not an OpenSandbox sandbox, or OpenSandbox is not configured: show nothing
   // rather than an error the operator can do nothing about.
@@ -176,7 +180,12 @@ function OsbSection({ namespace, name }: { namespace: string; name: string }) {
   return (
     <section>
       <h3 className="text-sm font-semibold mb-2">OpenSandbox</h3>
-      {error && <div className="text-sm text-red-700">{msg}</div>}
+      {error && !data && <div className="text-sm text-red-700">{msg}</div>}
+      {error && data && (
+        <div className="text-sm text-amber-700">
+          Showing the last successful fetch — the latest attempt failed: {msg}
+        </div>
+      )}
       {data && (
         <>
           <div className="text-xs text-slate-500 mb-1">id: {data.id}</div>
