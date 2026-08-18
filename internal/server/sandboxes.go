@@ -10,6 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/aGallea/sandbox-dashboard/internal/osb"
 	v1alpha1 "sigs.k8s.io/agent-sandbox/api/v1alpha1"
 )
 
@@ -24,10 +25,19 @@ type SandboxDetail struct {
 	Events      []EventEntry          `json:"events"`
 }
 
+// sandboxListResponse is the JSON returned by GET /api/v1/sandboxes.
+type sandboxListResponse struct {
+	Items []ResourceSummary `json:"items"`
+	Osb   *OsbStatus        `json:"osb,omitempty"`
+}
+
 func handleSandboxList(d Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		nsFilter := r.URL.Query().Get("namespace")
 		phaseFilter := r.URL.Query().Get("phase")
+		creatorFilter := r.URL.Query().Get("creator")
+		osbStateFilter := r.URL.Query().Get("osbState")
+		staleOnly := r.URL.Query().Get("stale") == "true"
 
 		var list v1alpha1.SandboxList
 		if err := d.Client.List(r.Context(), &list); err != nil {
@@ -39,8 +49,32 @@ func handleSandboxList(d Deps) http.HandlerFunc {
 			})
 			return
 		}
-		now := time.Now()
+
+		now := d.now()
+		staleAfter := d.staleAfter()
+
+		// Fetch the OpenSandbox inventory once for the whole page. A failure
+		// here is never fatal: the CR data is still worth serving.
+		var (
+			inventory map[string]osb.Sandbox
+			osbStatus *OsbStatus
+		)
+		if d.Osb != nil {
+			fetched, err := d.Osb.ListSandboxes(r.Context())
+			if err != nil {
+				if d.Logger != nil {
+					d.Logger.Error("osb_list_failed", "err", err.Error())
+				}
+				osbStatus = &OsbStatus{Status: "unreachable", Error: "OpenSandbox is unreachable"}
+			} else {
+				inventory = fetched
+				at := now
+				osbStatus = &OsbStatus{Status: "ok", FetchedAt: &at, Reported: len(fetched)}
+			}
+		}
+
 		summaries := make([]ResourceSummary, 0, len(list.Items))
+		matched := 0
 		for i := range list.Items {
 			item := &list.Items[i]
 			if nsFilter != "" && item.Namespace != nsFilter {
@@ -50,15 +84,51 @@ func handleSandboxList(d Deps) http.HandlerFunc {
 			if phaseFilter != "" && phase != phaseFilter {
 				continue
 			}
+			creator := creatorFor(item.Labels)
+			if creatorFilter != "" && creator != creatorFilter {
+				continue
+			}
+			owner, team, experiment := identityFor(item.Labels)
+
+			var view *OsbView
+			if id := item.Labels[OsbIDLabel]; id != "" {
+				if s, ok := inventory[id]; ok {
+					matched++
+					v := newOsbView(s, phase, now, staleAfter)
+					view = &v
+				}
+			}
+			if osbStateFilter != "" && (view == nil || view.State != osbStateFilter) {
+				continue
+			}
+			if staleOnly && (view == nil || !view.Stale) {
+				continue
+			}
+
 			summaries = append(summaries, ResourceSummary{
 				Name:       item.Name,
 				Namespace:  item.Namespace,
 				Kind:       "Sandbox",
 				Phase:      phase,
 				AgeSeconds: ageSeconds(item.ObjectMeta, now),
+				Creator:    creator,
+				Owner:      owner,
+				Team:       team,
+				Experiment: experiment,
+				Osb:        view,
 			})
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"items": summaries})
+
+		// Reported-versus-matched makes a broken join key visible instead of
+		// silently degrading every row to creator "unknown".
+		if osbStatus != nil && osbStatus.Status == "ok" {
+			osbStatus.Matched = matched
+			if d.Logger != nil && osbStatus.Reported != matched {
+				d.Logger.Warn("osb_join_incomplete", "reported", osbStatus.Reported, "matched", matched)
+			}
+		}
+
+		writeJSON(w, http.StatusOK, sandboxListResponse{Items: summaries, Osb: osbStatus})
 	}
 }
 

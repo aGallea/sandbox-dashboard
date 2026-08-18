@@ -98,3 +98,13 @@ func newOsbView(s osb.Sandbox, phase string, now time.Time, staleAfter time.Dura
 	}
 	return v
 }
+
+// OsbStatus reports the health of the OpenSandbox join for one list response.
+// It is omitted entirely when no OpenSandbox URL is configured.
+type OsbStatus struct {
+	Status    string     `json:"status"` // "ok" | "unreachable"
+	Error     string     `json:"error,omitempty"`
+	FetchedAt *time.Time `json:"fetchedAt,omitempty"`
+	Reported  int        `json:"reported"` // sandboxes OpenSandbox returned
+	Matched   int        `json:"matched"`  // of those, how many joined to a CR
+}

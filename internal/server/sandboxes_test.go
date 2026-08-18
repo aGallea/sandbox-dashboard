@@ -1,10 +1,13 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -12,6 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/aGallea/sandbox-dashboard/internal/k8s"
+	"github.com/aGallea/sandbox-dashboard/internal/osb"
 	v1alpha1 "sigs.k8s.io/agent-sandbox/api/v1alpha1"
 )
 
@@ -101,4 +105,225 @@ func TestSandboxes_Detail_404OnMissing(t *testing.T) {
 	r.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusNotFound, rec.Code)
 	require.Equal(t, "application/problem+json", rec.Header().Get("Content-Type"))
+}
+
+// fakeOsb is a stand-in for *osb.Client in handler tests.
+type fakeOsb struct {
+	list map[string]osb.Sandbox
+	err  error
+	diag osb.Diagnostics
+}
+
+func (f *fakeOsb) ListSandboxes(context.Context) (map[string]osb.Sandbox, error) {
+	return f.list, f.err
+}
+
+func (f *fakeOsb) Diagnostics(context.Context, string) (osb.Diagnostics, error) {
+	return f.diag, f.err
+}
+
+// sandboxListBody is the shape of GET /api/v1/sandboxes.
+type sandboxListBody struct {
+	Items []ResourceSummary `json:"items"`
+	Osb   *OsbStatus        `json:"osb"`
+}
+
+func osbTestDeps(t *testing.T, objs []client.Object, o OsbClient, now time.Time) http.Handler {
+	t.Helper()
+	c := fake.NewClientBuilder().WithScheme(k8s.NewScheme()).WithObjects(objs...).Build()
+	d := Deps{
+		Client:        c,
+		CacheSynced:   func() bool { return true },
+		Now:           func() time.Time { return now },
+		OsbStaleAfter: DefaultOsbStaleAfter,
+	}
+	if o != nil {
+		d.Osb = o
+	}
+	return New(d)
+}
+
+func TestSandboxes_List_JoinsOpenSandboxStateOnTheIDLabel(t *testing.T) {
+	created := time.Date(2026, 8, 17, 14, 8, 57, 0, time.UTC)
+	observed := time.Date(2026, 8, 17, 14, 11, 40, 0, time.UTC)
+
+	// The CR name is deliberately unequal to the id: only the label may join.
+	objs := []client.Object{
+		&v1alpha1.Sandbox{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "sandbox-726f8779", Namespace: "default",
+				Labels: map[string]string{OsbIDLabel: "726f8779", "owner": "odeda", "team": "ig"},
+			},
+			Status: v1alpha1.SandboxStatus{Conditions: []metav1.Condition{{Type: "Ready", Status: metav1.ConditionTrue}}},
+		},
+	}
+	o := &fakeOsb{list: map[string]osb.Sandbox{
+		"726f8779": {
+			ID:     "726f8779",
+			Status: osb.Status{State: "Pending", Reason: "SANDBOX_PENDING", LastTransitionAt: &created},
+		},
+	}}
+
+	rec := httptest.NewRecorder()
+	osbTestDeps(t, objs, o, observed).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/sandboxes", nil))
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var got sandboxListBody
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Len(t, got.Items, 1)
+
+	it := got.Items[0]
+	require.Equal(t, CreatorOpenSandbox, it.Creator)
+	require.Equal(t, "odeda", it.Owner)
+	require.Equal(t, "ig", it.Team)
+	require.Equal(t, "Ready", it.Phase)
+	require.NotNil(t, it.Osb)
+	require.Equal(t, "Pending", it.Osb.State)
+	require.True(t, it.Osb.Diverged)
+	require.True(t, it.Osb.Stale)
+
+	require.NotNil(t, got.Osb)
+	require.Equal(t, "ok", got.Osb.Status)
+	require.Equal(t, 1, got.Osb.Reported)
+	require.Equal(t, 1, got.Osb.Matched)
+}
+
+func TestSandboxes_List_NonOpenSandboxCRGetsNoOsbBlock(t *testing.T) {
+	objs := []client.Object{
+		&v1alpha1.Sandbox{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "instance-element-web", Namespace: "default",
+				Labels: map[string]string{"app": "element", "swe-instance-id": "x"},
+			},
+			Status: v1alpha1.SandboxStatus{Conditions: []metav1.Condition{{Type: "Ready", Status: metav1.ConditionTrue}}},
+		},
+	}
+	rec := httptest.NewRecorder()
+	osbTestDeps(t, objs, &fakeOsb{list: map[string]osb.Sandbox{}}, time.Now()).
+		ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/sandboxes", nil))
+
+	var got sandboxListBody
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Len(t, got.Items, 1)
+	require.Equal(t, CreatorUnknown, got.Items[0].Creator)
+	require.Nil(t, got.Items[0].Osb)
+}
+
+func TestSandboxes_List_LabelledCRWithNoMatchingOsbRecordGetsNoOsbBlock(t *testing.T) {
+	objs := []client.Object{
+		&v1alpha1.Sandbox{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "orphan", Namespace: "default",
+				Labels: map[string]string{OsbIDLabel: "not-in-inventory"},
+			},
+			Status: v1alpha1.SandboxStatus{Conditions: []metav1.Condition{{Type: "Ready", Status: metav1.ConditionTrue}}},
+		},
+	}
+	rec := httptest.NewRecorder()
+	osbTestDeps(t, objs, &fakeOsb{list: map[string]osb.Sandbox{"other": {ID: "other"}}}, time.Now()).
+		ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/sandboxes", nil))
+
+	var got sandboxListBody
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Equal(t, CreatorOpenSandbox, got.Items[0].Creator, "the label still identifies the creator")
+	require.Nil(t, got.Items[0].Osb, "but there is no state to show")
+	require.Equal(t, 1, got.Osb.Reported)
+	require.Equal(t, 0, got.Osb.Matched)
+}
+
+func TestSandboxes_List_StillServesCRDataWhenOpenSandboxIsUnreachable(t *testing.T) {
+	objs := []client.Object{
+		&v1alpha1.Sandbox{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "a", Namespace: "default",
+				Labels: map[string]string{OsbIDLabel: "a"},
+			},
+			Status: v1alpha1.SandboxStatus{Conditions: []metav1.Condition{{Type: "Ready", Status: metav1.ConditionTrue}}},
+		},
+	}
+	o := &fakeOsb{err: errors.New("dial tcp: connection refused to http://osb:80?key=secret-key")}
+
+	rec := httptest.NewRecorder()
+	osbTestDeps(t, objs, o, time.Now()).
+		ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/sandboxes", nil))
+
+	require.Equal(t, http.StatusOK, rec.Code, "an OpenSandbox outage must not fail the list")
+	require.NotContains(t, rec.Body.String(), "secret-key", "upstream error text must never reach the client")
+
+	var got sandboxListBody
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Len(t, got.Items, 1)
+	require.Equal(t, "Ready", got.Items[0].Phase)
+	require.Nil(t, got.Items[0].Osb)
+	require.NotNil(t, got.Osb)
+	require.Equal(t, "unreachable", got.Osb.Status)
+}
+
+func TestSandboxes_List_OmitsOsbBlockEntirelyWhenUnconfigured(t *testing.T) {
+	objs := []client.Object{
+		&v1alpha1.Sandbox{
+			ObjectMeta: metav1.ObjectMeta{Name: "a", Namespace: "default"},
+			Status:     v1alpha1.SandboxStatus{Conditions: []metav1.Condition{{Type: "Ready", Status: metav1.ConditionTrue}}},
+		},
+	}
+	rec := httptest.NewRecorder()
+	osbTestDeps(t, objs, nil, time.Now()).
+		ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/sandboxes", nil))
+
+	var got sandboxListBody
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Len(t, got.Items, 1)
+	require.Nil(t, got.Osb, "no OpenSandbox configured means no osb block at all")
+}
+
+func TestSandboxes_List_FiltersByCreatorStateAndStaleness(t *testing.T) {
+	created := time.Date(2026, 8, 17, 14, 0, 0, 0, time.UTC)
+	observed := created.Add(10 * time.Minute)
+	recent := observed.Add(-2 * time.Second)
+
+	objs := []client.Object{
+		&v1alpha1.Sandbox{ // stale + diverged
+			ObjectMeta: metav1.ObjectMeta{Name: "stuck", Namespace: "default", Labels: map[string]string{OsbIDLabel: "stuck"}},
+			Status:     v1alpha1.SandboxStatus{Conditions: []metav1.Condition{{Type: "Ready", Status: metav1.ConditionTrue}}},
+		},
+		&v1alpha1.Sandbox{ // healthy
+			ObjectMeta: metav1.ObjectMeta{Name: "fine", Namespace: "default", Labels: map[string]string{OsbIDLabel: "fine"}},
+			Status:     v1alpha1.SandboxStatus{Conditions: []metav1.Condition{{Type: "Ready", Status: metav1.ConditionTrue}}},
+		},
+		&v1alpha1.Sandbox{ // another creator
+			ObjectMeta: metav1.ObjectMeta{Name: "other", Namespace: "default", Labels: map[string]string{"app": "x"}},
+			Status:     v1alpha1.SandboxStatus{Conditions: []metav1.Condition{{Type: "Ready", Status: metav1.ConditionTrue}}},
+		},
+	}
+	o := &fakeOsb{list: map[string]osb.Sandbox{
+		"stuck": {ID: "stuck", Status: osb.Status{State: "Pending", LastTransitionAt: &created}},
+		"fine":  {ID: "fine", Status: osb.Status{State: "Running", LastTransitionAt: &recent}},
+	}}
+	h := osbTestDeps(t, objs, o, observed)
+
+	tests := []struct {
+		path string
+		want []string
+	}{
+		{"/api/v1/sandboxes", []string{"stuck", "fine", "other"}},
+		{"/api/v1/sandboxes?creator=opensandbox", []string{"stuck", "fine"}},
+		{"/api/v1/sandboxes?creator=unknown", []string{"other"}},
+		{"/api/v1/sandboxes?osbState=Pending", []string{"stuck"}},
+		{"/api/v1/sandboxes?osbState=Running", []string{"fine"}},
+		{"/api/v1/sandboxes?stale=true", []string{"stuck"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.path, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tc.path, nil))
+			require.Equal(t, http.StatusOK, rec.Code)
+			var got sandboxListBody
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+			names := make([]string, len(got.Items))
+			for i := range got.Items {
+				names[i] = got.Items[i].Name
+			}
+			require.ElementsMatch(t, tc.want, names)
+		})
+	}
 }
