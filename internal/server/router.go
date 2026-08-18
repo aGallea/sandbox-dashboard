@@ -2,6 +2,7 @@
 package server
 
 import (
+	"context"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -11,6 +12,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/aGallea/sandbox-dashboard/internal/osb"
 )
 
 // Deps is the set of collaborators the router needs. Tests can swap any of them.
@@ -25,6 +28,48 @@ type Deps struct {
 	Logger *slog.Logger
 	// Prom is the optional Prometheus query client. If nil, /api/v1/metrics/* returns 503.
 	Prom QueryRanger
+	// Osb is the optional OpenSandbox client. If nil, sandbox rows carry no
+	// OpenSandbox state and the list response omits its osb block.
+	Osb OsbClient
+	// Now supplies the current time; tests substitute a fixed clock.
+	// If nil, time.Now is used.
+	Now func() time.Time
+	// OsbStaleAfter is how long a transient OpenSandbox state may sit before it
+	// is reported stale. If zero, DefaultOsbStaleAfter is used.
+	OsbStaleAfter time.Duration
+	// OsbTimeout bounds a single OpenSandbox inventory fetch. If zero,
+	// DefaultOsbTimeout is used.
+	OsbTimeout time.Duration
+}
+
+// OsbClient is the subset of *osb.Client the sandbox handlers depend on.
+type OsbClient interface {
+	ListSandboxes(ctx context.Context) (map[string]osb.Sandbox, error)
+	Diagnostics(ctx context.Context, id string) (osb.Diagnostics, error)
+}
+
+// now returns the Deps clock, defaulting to time.Now.
+func (d Deps) now() time.Time {
+	if d.Now == nil {
+		return time.Now()
+	}
+	return d.Now()
+}
+
+// staleAfter returns the configured staleness threshold, defaulting to DefaultOsbStaleAfter.
+func (d Deps) staleAfter() time.Duration {
+	if d.OsbStaleAfter <= 0 {
+		return DefaultOsbStaleAfter
+	}
+	return d.OsbStaleAfter
+}
+
+// osbTimeout returns the configured OpenSandbox fetch timeout, defaulting to DefaultOsbTimeout.
+func (d Deps) osbTimeout() time.Duration {
+	if d.OsbTimeout <= 0 {
+		return DefaultOsbTimeout
+	}
+	return d.OsbTimeout
 }
 
 // New returns a fully wired chi router.
@@ -62,6 +107,7 @@ func New(d Deps) http.Handler {
 			r.Get("/overview", handleOverview(d))
 			r.Get("/sandboxes", handleSandboxList(d))
 			r.Get("/sandboxes/{namespace}/{name}", handleSandboxDetail(d))
+			r.Get("/sandboxes/{namespace}/{name}/osb", handleSandboxOsb(d))
 			r.Get("/claims", handleClaimList(d))
 			r.Get("/claims/{namespace}/{name}", handleClaimDetail(d))
 			r.Get("/templates", handleTemplateList(d))

@@ -19,6 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 
 	"github.com/aGallea/sandbox-dashboard/internal/k8s"
+	"github.com/aGallea/sandbox-dashboard/internal/osb"
 	"github.com/aGallea/sandbox-dashboard/internal/prom"
 	"github.com/aGallea/sandbox-dashboard/internal/server"
 	"github.com/aGallea/sandbox-dashboard/internal/ui"
@@ -31,6 +32,8 @@ func main() {
 	flag.StringVar(&listenAddr, "listen-addr", ":8080", "HTTP bind address")
 	var promURL string
 	flag.StringVar(&promURL, "prometheus-url", "", "Optional Prometheus base URL (e.g. http://prometheus.monitoring.svc:9090). If empty, /api/v1/metrics/* returns 503.")
+	var osbURL string
+	flag.StringVar(&osbURL, "opensandbox-url", "", "Optional OpenSandbox base URL (e.g. http://opensandbox-server.default.svc). If empty, sandbox rows carry no OpenSandbox state.")
 	flag.Parse()
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -52,6 +55,27 @@ func main() {
 		logger.Info("prometheus client configured", "url", promURL)
 	} else {
 		logger.Info("prometheus URL not set — metrics endpoint will return 503")
+	}
+
+	if osbURL == "" {
+		osbURL = os.Getenv("OPENSANDBOX_URL")
+	}
+	var osbClient server.OsbClient
+	if osbURL != "" {
+		apiKey := os.Getenv("OPENSANDBOX_API_KEY")
+		if apiKey == "" {
+			logger.Warn("OPENSANDBOX_API_KEY is empty — OpenSandbox requests will likely be rejected")
+		}
+		raw, err := osb.NewClient(osbURL, apiKey, osb.WithLogger(logger))
+		if err != nil {
+			logger.Error("create opensandbox client", "err", err)
+			os.Exit(1)
+		}
+		cache := osb.NewCache(raw, durationFromEnv("AGENT_SANDBOX_DASHBOARD_OSB_TTL", 5*time.Second), time.Now)
+		osbClient = osbAdapter{Cache: cache, client: raw}
+		logger.Info("opensandbox client configured", "url", osbURL)
+	} else {
+		logger.Info("opensandbox URL not set — sandbox rows will carry no OpenSandbox state")
 	}
 
 	cfg, err := config.GetConfig()
@@ -98,16 +122,22 @@ func main() {
 		os.Exit(1)
 	}
 	deps := server.Deps{
-		Client:      mgr.GetClient(),
-		CacheSynced: cacheSynced.Load,
-		UIAssets:    assets,
-		Logger:      logger,
+		Client:        mgr.GetClient(),
+		CacheSynced:   cacheSynced.Load,
+		UIAssets:      assets,
+		Logger:        logger,
+		OsbStaleAfter: durationFromEnv("AGENT_SANDBOX_DASHBOARD_OSB_STALE_AFTER", server.DefaultOsbStaleAfter),
+		OsbTimeout:    durationFromEnv("AGENT_SANDBOX_DASHBOARD_OSB_TIMEOUT", server.DefaultOsbTimeout),
 	}
 	// Only assign Prom when the client was actually created. Assigning a typed
 	// nil *prom.Client to a server.QueryRanger field would wrap it in a
 	// non-nil interface value and bypass the handler's nil check.
 	if promClient != nil {
 		deps.Prom = promClient
+	}
+	// Same typed-nil hazard as Prom above: only assign when non-nil.
+	if osbClient != nil {
+		deps.Osb = osbClient
 	}
 	router := server.New(deps)
 
@@ -149,4 +179,30 @@ func main() {
 // slogToLogr adapts a slog.Logger to the logr.Logger that controller-runtime expects.
 func slogToLogr(s *slog.Logger) logr.Logger {
 	return logr.FromSlogHandler(s.Handler())
+}
+
+// osbAdapter combines a cached lister with the uncached client's diagnostics,
+// satisfying server.OsbClient. Diagnostics are per-sandbox and only fetched
+// when a drawer is opened, so they are deliberately not cached.
+type osbAdapter struct {
+	*osb.Cache
+	client *osb.Client
+}
+
+func (a osbAdapter) Diagnostics(ctx context.Context, id string) (osb.Diagnostics, error) {
+	return a.client.Diagnostics(ctx, id)
+}
+
+// durationFromEnv reads a Go duration string (e.g. "10s") from the environment,
+// returning def when unset or invalid.
+func durationFromEnv(key string, def time.Duration) time.Duration {
+	v, ok := os.LookupEnv(key)
+	if !ok {
+		return def
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d <= 0 {
+		return def
+	}
+	return d
 }

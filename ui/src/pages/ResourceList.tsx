@@ -4,7 +4,7 @@ import { useMemo } from 'react';
 import { fetchList } from '../api/client';
 import { RESOURCES } from '../resources/config';
 import { DetailDrawer } from '../components/DetailDrawer';
-import type { ResourceKind } from '../api/client';
+import type { OsbView, ResourceKind } from '../api/client';
 
 interface Props {
   kind: ResourceKind;
@@ -18,14 +18,20 @@ export function ResourceListPage({ kind }: Props) {
   const [searchParams, setSearchParams] = useSearchParams();
   const nsFilter = searchParams.get('namespace') ?? '';
   const phaseFilter = searchParams.get('phase') ?? '';
+  const creatorFilter = searchParams.get('creator') ?? '';
+  const osbStateFilter = searchParams.get('osbState') ?? '';
+  const staleOnly = searchParams.get('stale') === 'true';
   const search = searchParams.toString() ? `?${searchParams.toString()}` : '';
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['list', kind, nsFilter, phaseFilter],
+    queryKey: ['list', kind, nsFilter, phaseFilter, creatorFilter, osbStateFilter, staleOnly],
     queryFn: () =>
       fetchList(kind, {
         namespace: nsFilter || undefined,
         phase: phaseFilter || undefined,
+        creator: creatorFilter || undefined,
+        osbState: osbStateFilter || undefined,
+        stale: staleOnly || undefined,
       }),
     refetchInterval: 5_000,
   });
@@ -36,7 +42,14 @@ export function ResourceListPage({ kind }: Props) {
     return Array.from(set).sort();
   }, [data]);
 
-  const updateFilter = (key: 'namespace' | 'phase', value: string) => {
+  // These filters can only be satisfied when OpenSandbox data is present, so a
+  // filtered empty list means "could not compute", not "nothing matched".
+  // Gated on cfg.showOsb because the other resource kinds never return an osb
+  // field, which would otherwise make this true for them and hide their rows.
+  const osbFilterActive = cfg.showOsb && (staleOnly || osbStateFilter !== '');
+  const osbFilterUnsatisfiable = osbFilterActive && !!data && data.osb?.status !== 'ok';
+
+  const updateFilter = (key: 'namespace' | 'phase' | 'creator' | 'osbState' | 'stale', value: string) => {
     const next = new URLSearchParams(searchParams);
     if (value) next.set(key, value);
     else next.delete(key);
@@ -74,18 +87,78 @@ export function ResourceListPage({ kind }: Props) {
               ))}
             </select>
           )}
+          {cfg.showOsb && (
+            <>
+              <select
+                className="border border-slate-300 rounded px-2 py-1 text-sm"
+                value={creatorFilter}
+                onChange={(e) => updateFilter('creator', e.target.value)}
+              >
+                <option value="">any creator</option>
+                <option value="opensandbox">opensandbox</option>
+                <option value="unknown">unknown</option>
+              </select>
+              <select
+                className="border border-slate-300 rounded px-2 py-1 text-sm"
+                value={osbStateFilter}
+                onChange={(e) => updateFilter('osbState', e.target.value)}
+              >
+                <option value="">any OSB state</option>
+                {cfg.osbStates.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+              <label className="flex items-center gap-1 text-sm text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={staleOnly}
+                  onChange={(e) => updateFilter('stale', e.target.checked ? 'true' : '')}
+                />
+                stale only
+              </label>
+            </>
+          )}
         </div>
+
+        {osbFilterUnsatisfiable && (
+          <div className="mx-6 mt-3 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            This filter needs OpenSandbox, which is{' '}
+            {data.osb?.status === 'unreachable' ? 'unreachable' : 'not configured'}. An empty result
+            here does not mean nothing matched — the state could not be computed.
+          </div>
+        )}
+
+        {!osbFilterUnsatisfiable && data?.osb?.status === 'unreachable' && (
+          <div className="mx-6 mt-3 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            OpenSandbox is unreachable — showing Kubernetes state only.
+          </div>
+        )}
+        {data?.osb?.status === 'ok' &&
+          data.osb.reported - data.osb.matched > Math.max(5, data.osb.reported * 0.1) && (
+            <div className="mx-6 mt-3 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              OpenSandbox reported {data.osb.reported} sandboxes; only {data.osb.matched} matched a
+              Kubernetes resource. A small deficit is expected briefly after deletions — the
+              cached OpenSandbox inventory can lag the live cluster state by up to the cache TTL —
+              but a gap this large usually means the join key stopped being stamped.
+            </div>
+          )}
 
         {isLoading && <div className="p-6 text-slate-500">Loading…</div>}
         {error && <div className="p-6 text-red-700">Error: {(error as Error).message}</div>}
 
-        {data && (
+        {osbFilterUnsatisfiable ? null : data && (
           <table className="w-full text-sm">
             <thead className="text-left text-slate-500 bg-white">
               <tr>
                 <th className="px-6 py-2">Name</th>
                 <th className="px-3 py-2">Namespace</th>
                 {cfg.showPhase && <th className="px-3 py-2">Phase</th>}
+                {cfg.showOsb && <th className="px-3 py-2">OSB State</th>}
+                {cfg.showOsb && <th className="px-3 py-2">Creator</th>}
+                {cfg.showOsb && <th className="px-3 py-2">Session</th>}
+                {cfg.showOsb && <th className="px-3 py-2">Owner</th>}
                 <th className="px-3 py-2">Age</th>
               </tr>
             </thead>
@@ -113,6 +186,25 @@ export function ResourceListPage({ kind }: Props) {
                       <td className="px-3 py-2">
                         <PhasePill phase={it.phase} />
                       </td>
+                    )}
+                    {cfg.showOsb && (
+                      <td className="px-3 py-2">
+                        <OsbStatePill osb={it.osb} />
+                      </td>
+                    )}
+                    {cfg.showOsb && (
+                      <td className="px-3 py-2 text-slate-600">{it.creator ?? '—'}</td>
+                    )}
+                    {cfg.showOsb && (
+                      <td
+                        className="px-3 py-2 text-slate-600 max-w-[16rem] truncate"
+                        title={it.sessionId}
+                      >
+                        {it.sessionId ?? '—'}
+                      </td>
+                    )}
+                    {cfg.showOsb && (
+                      <td className="px-3 py-2 text-slate-600">{it.owner || '—'}</td>
                     )}
                     <td className="px-3 py-2 text-slate-600 tabular-nums">
                       {formatAge(it.ageSeconds)}
@@ -145,6 +237,34 @@ function PhasePill({ phase }: { phase: string }) {
       ? 'bg-amber-100 text-amber-800'
       : 'bg-slate-100 text-slate-700';
   return <span className={`px-2 py-0.5 rounded text-xs ${cls}`}>{phase || '—'}</span>;
+}
+
+function OsbStatePill({ osb }: { osb?: OsbView }) {
+  if (!osb) return <span className="text-slate-400">—</span>;
+
+  const cls =
+    osb.state === 'Running'
+      ? 'bg-emerald-100 text-emerald-800'
+      : osb.state === 'Failed' || osb.state === 'Terminated'
+      ? 'bg-red-100 text-red-800'
+      : 'bg-amber-100 text-amber-800';
+
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span className={`px-2 py-0.5 rounded text-xs ${cls}`}>{osb.state}</span>
+      {osb.diverged && (
+        <span title="OpenSandbox disagrees with the Kubernetes Ready condition">⚠</span>
+      )}
+      {osb.stale && (
+        <span
+          className="text-xs text-red-700 tabular-nums"
+          title={`OpenSandbox has not advanced this state in ${formatAge(osb.stateAgeSeconds)}`}
+        >
+          ⏱ {formatAge(osb.stateAgeSeconds)}
+        </span>
+      )}
+    </span>
+  );
 }
 
 function formatAge(secs: number) {

@@ -2,11 +2,13 @@ import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
   fetchDetail,
+  fetchSandboxOsb,
   type ResourceKind,
   type SandboxDetail,
   type ClaimDetail,
   type TemplateDetail,
   type WarmPoolDetail,
+  type OsbView,
 } from '../api/client';
 import { ConditionsTable } from './ConditionsTable';
 import { EventsList } from './EventsList';
@@ -63,7 +65,9 @@ export function DetailDrawer({ kind, namespace, name, listUrl }: Props) {
 
       {data && (
         <div className="p-4 space-y-4">
-          {kind === 'sandboxes' && <SandboxBody d={data as SandboxDetail} />}
+          {kind === 'sandboxes' && (
+            <SandboxBody d={data as SandboxDetail} namespace={namespace} name={name} />
+          )}
           {kind === 'claims' && <ClaimBody d={data as ClaimDetail} />}
           {kind === 'templates' && <TemplateBody d={data as TemplateDetail} />}
           {kind === 'warmpools' && <WarmPoolBody d={data as WarmPoolDetail} />}
@@ -73,7 +77,15 @@ export function DetailDrawer({ kind, namespace, name, listUrl }: Props) {
   );
 }
 
-function SandboxBody({ d }: { d: SandboxDetail }) {
+function SandboxBody({
+  d,
+  namespace,
+  name,
+}: {
+  d: SandboxDetail;
+  namespace: string;
+  name: string;
+}) {
   return (
     <>
       <section>
@@ -93,6 +105,7 @@ function SandboxBody({ d }: { d: SandboxDetail }) {
         <h3 className="text-sm font-semibold mb-2">Events</h3>
         <EventsList events={d.events} />
       </section>
+      <OsbSection namespace={namespace} name={name} osb={d.summary.osb} />
     </>
   );
 }
@@ -140,5 +153,89 @@ function WarmPoolBody({ d }: { d: WarmPoolDetail }) {
       </section>
       <YamlBlock value={d.spec} />
     </>
+  );
+}
+
+function OsbSection({
+  namespace,
+  name,
+  osb,
+}: {
+  namespace: string;
+  name: string;
+  /** OpenSandbox's own watch-fed view, from the sandbox's ResourceSummary. */
+  osb?: OsbView;
+}) {
+  const { data, isFetching, error, dataUpdatedAt } = useQuery({
+    queryKey: ['osb-detail', namespace, name],
+    queryFn: () => fetchSandboxOsb(namespace, name),
+    // Only poll once we actually have diagnostics. On any error the query keeps
+    // data undefined, which makes react-query reset status to "pending" on every
+    // refetch — that would blink a genuine error section out every 10s. It also
+    // avoids polling /osb forever for the many sandboxes OpenSandbox never created.
+    refetchInterval: (query) => (query.state.data ? 10_000 : false),
+    retry: false,
+  });
+
+  const msg = (error as Error | null)?.message;
+  // The diagnostics half legitimately does not apply to most sandboxes (404)
+  // or to an unconfigured install (503).
+  const diagnosticsInapplicable =
+    msg === 'not-an-opensandbox-sandbox' || msg === 'opensandbox-unconfigured';
+
+  // Without a watch-fed view to fall back on, keep the original contract:
+  // nothing until the diagnostics query settles (avoids a flash on every
+  // sandbox), and nothing when diagnostics do not apply. With a watch-fed
+  // view, that view is exactly what an operator needs when diagnostics are
+  // unavailable, so the section always renders.
+  if (!osb) {
+    if (isFetching && !data && !error) return null;
+    if (diagnosticsInapplicable) return null;
+  }
+
+  return (
+    <section className="space-y-3">
+      {osb && (
+        <div>
+          <h3 className="text-sm font-semibold mb-2">OpenSandbox state (from its watch)</h3>
+          <dl className="grid grid-cols-2 gap-x-3 text-sm">
+            <dt className="text-slate-500">State</dt>
+            <dd>{osb.state || '—'}</dd>
+            <dt className="text-slate-500">Reason</dt>
+            <dd>{osb.reason || '—'}</dd>
+            <dt className="text-slate-500">Message</dt>
+            <dd className="break-words">{osb.message || '—'}</dd>
+            <dt className="text-slate-500">Expiry</dt>
+            <dd>{osb.expiresAt ? new Date(osb.expiresAt).toLocaleString() : '—'}</dd>
+            <dt className="text-slate-500">State age</dt>
+            <dd className="tabular-nums">{osb.stateAgeSeconds}s</dd>
+          </dl>
+        </div>
+      )}
+      {!diagnosticsInapplicable && (
+        <div>
+          <h3 className="text-sm font-semibold mb-2">Diagnostics (read on demand)</h3>
+          {error && !data && <div className="text-sm text-red-700">{msg}</div>}
+          {error && data && (
+            <div className="text-sm text-amber-700">
+              Showing the last successful fetch from {new Date(dataUpdatedAt).toLocaleTimeString()}{' '}
+              — the latest attempt failed: {msg}
+            </div>
+          )}
+          {data && (
+            <>
+              <div className="text-xs text-slate-500 mb-1">id: {data.id}</div>
+              <pre className="text-xs bg-slate-50 border border-slate-200 rounded p-2 overflow-x-auto whitespace-pre">
+                {data.summary}
+              </pre>
+              <h4 className="text-xs font-semibold mt-3 mb-1">OpenSandbox events</h4>
+              <pre className="text-xs bg-slate-50 border border-slate-200 rounded p-2 overflow-x-auto whitespace-pre">
+                {data.events}
+              </pre>
+            </>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
