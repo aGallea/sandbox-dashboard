@@ -5,7 +5,7 @@ Aggregates `Sandbox`, `SandboxClaim`, `SandboxTemplate`, and `SandboxWarmPool` s
 
 ## What it does
 
-- **Overview** of all four CRDs with per-phase counts.
+- **Overview** of the whole fleet: per-CRD counters, a triage strip, one cell per sandbox ordered by age, reserved-against-used meters, share and runtime breakdowns, and a per-group resource footprint.
 - **List + detail drawer** per resource kind, with status conditions, spec (YAML), recent events, and — for sandboxes, when configured — OpenSandbox's own lifecycle state alongside the Kubernetes Ready condition.
 - **Metrics page** with four charts (sandbox creation latency p50/p95, claim startup latency p50/p95, claim controller startup latency p50/p95, claim creation rate). Backed by a whitelisted Prometheus proxy — the SPA never sends raw PromQL.
 - Read-only RBAC. No write actions, no in-app auth (delegated to whatever ingress is in front).
@@ -34,6 +34,26 @@ The dashboard exposes:
 - `/api/v1/usage` — live CPU/memory use per sandbox pod, keyed `namespace/pod` (503 when Prometheus is unconfigured, 502 when it is unreachable).
 - `/api/v1/sandboxes/{namespace}/{name}/osb` — OpenSandbox's own diagnostics for one sandbox (404 when the sandbox was not created by OpenSandbox, 503 when OpenSandbox is unconfigured).
 - `/` — the embedded SPA.
+
+### The overview page
+
+The counters come from `/api/v1/overview`; everything else is rolled up in the browser from
+the same `/api/v1/sandboxes` response the list page fetches, so slicing the fleet a new way
+costs a function rather than an endpoint. Past a few thousand sandboxes, move the rollups
+server-side.
+
+The **Group by** control is not a fixed list. Every label key the fleet carries becomes a
+candidate dimension alongside image, node, namespace, request size, readiness, OSB state and
+creator, and each is kept only if it actually divides the fleet: at least two distinct values,
+and no more than one value per two sandboxes. That single rule means a cluster stamping `team=`
+gets a Team dimension with no configuration, while a key that is unique per sandbox
+(`session_id`, `opensandbox.io/id`) or has one value for everything is dropped instead of
+drawing a chart with 168 slices of one. Dimensions that split the fleet into six parts or fewer
+render as a ring; longer tails render as a ranked list of the largest five with the rest folded
+into Other. The selection lives in the URL (`?by=node`), so a view can be shared.
+
+**Reserved against used** and the used half of the footprint bars need Prometheus. Without it
+those panels say so and the rest of the page is unaffected.
 
 ### Configuring Prometheus (optional)
 
