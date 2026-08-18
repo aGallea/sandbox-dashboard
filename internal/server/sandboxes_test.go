@@ -429,6 +429,16 @@ func TestSandboxOsb_Returns404WhenSandboxHasNoOpenSandboxLabel(t *testing.T) {
 	osbTestDeps(t, objs, &fakeOsb{}, time.Now()).
 		ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/sandboxes/default/plain/osb", nil))
 	require.Equal(t, http.StatusNotFound, rec.Code)
+	require.Contains(t, rec.Body.String(), "not-an-opensandbox-sandbox",
+		"must be the not-an-OpenSandbox-sandbox 404, not the sandbox-not-found 404 or chi's catch-all")
+}
+
+func TestSandboxOsb_Returns404WithDistinctSlugWhenSandboxAbsent(t *testing.T) {
+	rec := httptest.NewRecorder()
+	osbTestDeps(t, []client.Object{}, &fakeOsb{}, time.Now()).
+		ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/sandboxes/default/never-created/osb", nil))
+	require.Equal(t, http.StatusNotFound, rec.Code)
+	require.Contains(t, rec.Body.String(), "sandbox-not-found")
 }
 
 func TestSandboxOsb_Returns503WhenOpenSandboxUnconfigured(t *testing.T) {
