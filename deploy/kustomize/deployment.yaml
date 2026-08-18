@@ -32,17 +32,17 @@ spec:
           imagePullPolicy: IfNotPresent
           args:
             - "--listen-addr=:8080"
-          # To enable the metrics page, add the PROMETHEUS_URL env var via a
-          # kustomize overlay or patch. Without it the /metrics endpoint
-          # returns 503 problem+json and the UI shows a placeholder.
+          # Optional integrations. Uncomment this env: block and keep only the
+          # variables you need — there must be exactly one env: key per container,
+          # so do not add a second block. Both integrations degrade quietly when
+          # absent: /metrics returns 503 problem+json and the UI shows a
+          # placeholder; sandbox rows simply carry no OpenSandbox state.
+          #
+          # The OpenSandbox API key comes from a Secret you create. The dashboard
+          # never reads Secrets through the API server, so no extra RBAC is needed.
           # env:
           #   - name: PROMETHEUS_URL
           #     value: "http://prometheus.monitoring.svc:9090"
-          # Optional OpenSandbox integration. Uncomment to show OpenSandbox's own
-          # lifecycle state next to the Kubernetes Ready condition. The API key is
-          # read from a Secret you create; the dashboard never reads Secrets via the
-          # API server, so no extra RBAC is needed.
-          # env:
           #   - name: OPENSANDBOX_URL
           #     value: "http://opensandbox-server.default.svc"
           #   - name: OPENSANDBOX_API_KEY

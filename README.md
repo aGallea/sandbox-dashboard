@@ -79,15 +79,22 @@ OPENSANDBOX_API_KEY=$(kubectl -n default get secret opensandbox-server-api-key \
 ```
 
 Sandboxes are matched to OpenSandbox records on the `opensandbox.io/id` label, not the
-resource name. The list gains three things:
+resource name. Once configured, `GET /api/v1/sandboxes` enriches each sandbox row with:
 
-- a **Creator** column, so sandboxes from other creators stay legible
-- an **OSB State** column, marked `⚠` when it disagrees with the Ready condition
-- a **stale** marker (`⏱`) when OpenSandbox has not advanced a transient state within
-  `AGENT_SANDBOX_DASHBOARD_OSB_STALE_AFTER` (default `60s`). Filter with `?stale=true`.
+- `creator` — `opensandbox` when the label is present, otherwise `unknown`
+- `osb.state` plus OpenSandbox's own reason, message and expiry
+- `osb.diverged` — OpenSandbox's state disagrees with the Kubernetes Ready condition
+- `osb.stale` — a transient OpenSandbox state has not advanced within
+  `AGENT_SANDBOX_DASHBOARD_OSB_STALE_AFTER` (default `60s`)
 
-Both are optional and degrade quietly: with `OPENSANDBOX_URL` unset the columns disappear,
-and if OpenSandbox is unreachable the list still serves Kubernetes data with a warning.
+and a sibling `osb` object reporting `status`, `reported` and `matched`. Filter with
+`?creator=`, `?osbState=` and `?stale=true`. The dashboard UI surfaces these as columns in a
+subsequent change; until then they are available from the API.
+
+Both integrations degrade quietly: with `OPENSANDBOX_URL` unset the fields are absent
+entirely, and if OpenSandbox is unreachable the list still returns 200 with Kubernetes data
+plus `osb.status: "unreachable"`. Note that `?stale=true` and `?osbState=` return an empty
+list in that state — check `osb.status` before reading an empty result as "nothing is stale".
 
 | Env | Default | Purpose |
 |---|---|---|
