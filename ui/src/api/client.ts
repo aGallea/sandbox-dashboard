@@ -34,16 +34,62 @@ export async function fetchOverview(): Promise<OverviewResponse> {
 
 export type ResourceKind = 'sandboxes' | 'claims' | 'templates' | 'warmpools';
 
+export type OsbState =
+  | 'Pending'
+  | 'Running'
+  | 'Pausing'
+  | 'Paused'
+  | 'Resuming'
+  | 'Stopping'
+  | 'Terminated'
+  | 'Failed';
+
+export interface OsbView {
+  state: OsbState | string;
+  reason?: string;
+  message?: string;
+  expiresAt?: string;
+  lastTransitionAt?: string;
+  stateAgeSeconds: number;
+  /** OpenSandbox's state disagrees with the Kubernetes Ready condition. */
+  diverged: boolean;
+  /** A transient OpenSandbox state has not advanced within the threshold. */
+  stale: boolean;
+}
+
+export interface OsbStatus {
+  status: 'ok' | 'unreachable';
+  error?: string;
+  fetchedAt?: string;
+  reported: number;
+  matched: number;
+}
+
+export interface SandboxOsbDetail {
+  id: string;
+  summary: string;
+  events: string;
+}
+
 export interface ResourceSummary {
   name: string;
   namespace: string;
   kind: 'Sandbox' | 'SandboxClaim' | 'SandboxTemplate' | 'SandboxWarmPool';
   phase: '' | 'Ready' | 'NotReady' | 'Unknown' | 'Scaling';
   ageSeconds: number;
+  /** Sandboxes only. */
+  creator?: string;
+  owner?: string;
+  team?: string;
+  experiment?: string;
+  sessionId?: string;
+  osb?: OsbView;
 }
 
 export interface ListResponse {
   items: ResourceSummary[];
+  /** Absent when no OpenSandbox URL is configured. */
+  osb?: OsbStatus;
 }
 
 export interface Condition {
@@ -100,11 +146,20 @@ export interface WarmPoolDetail {
 
 export async function fetchList(
   kind: ResourceKind,
-  params: { namespace?: string; phase?: string } = {},
+  params: {
+    namespace?: string;
+    phase?: string;
+    creator?: string;
+    osbState?: string;
+    stale?: boolean;
+  } = {},
 ): Promise<ListResponse> {
   const q = new URLSearchParams();
   if (params.namespace) q.set('namespace', params.namespace);
   if (params.phase) q.set('phase', params.phase);
+  if (params.creator) q.set('creator', params.creator);
+  if (params.osbState) q.set('osbState', params.osbState);
+  if (params.stale) q.set('stale', 'true');
   const qs = q.toString();
   const url = `/api/v1/${kind}${qs ? `?${qs}` : ''}`;
   const res = await fetch(url);
@@ -116,6 +171,17 @@ export async function fetchDetail<T>(kind: ResourceKind, namespace: string, name
   const res = await fetch(`/api/v1/${kind}/${namespace}/${name}`);
   if (res.status === 404) throw new Error('not-found');
   if (!res.ok) throw new Error(`${kind} detail failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchSandboxOsb(
+  namespace: string,
+  name: string,
+): Promise<SandboxOsbDetail> {
+  const res = await fetch(`/api/v1/sandboxes/${namespace}/${name}/osb`);
+  if (res.status === 503) throw new Error('opensandbox-unconfigured');
+  if (res.status === 404) throw new Error('not-an-opensandbox-sandbox');
+  if (!res.ok) throw new Error(`opensandbox detail failed: ${res.status}`);
   return res.json();
 }
 
