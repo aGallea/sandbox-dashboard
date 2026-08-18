@@ -75,11 +75,16 @@ func TestMetrics_DoesNotRequireCacheSync(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 }
 
-// stubProm satisfies the QueryRanger interface defined in metrics.go.
+// stubProm satisfies the PromQuerier interface defined in metrics.go. Instant
+// queries are exercised in usage_test.go, which embeds this stub.
 type stubProm struct {
 	points  map[string][]prom.Point
 	err     error
 	slowFor time.Duration
+}
+
+func (s *stubProm) Query(context.Context, string, time.Time) ([]prom.Sample, error) {
+	return nil, s.err
 }
 
 func (s *stubProm) QueryRange(ctx context.Context, q string, _ prom.Range) ([]prom.Point, error) {

@@ -130,7 +130,7 @@ func main() {
 		OsbTimeout:    durationFromEnv("AGENT_SANDBOX_DASHBOARD_OSB_TIMEOUT", server.DefaultOsbTimeout),
 	}
 	// Only assign Prom when the client was actually created. Assigning a typed
-	// nil *prom.Client to a server.QueryRanger field would wrap it in a
+	// nil *prom.Client to a server.PromQuerier field would wrap it in a
 	// non-nil interface value and bypass the handler's nil check.
 	if promClient != nil {
 		deps.Prom = promClient

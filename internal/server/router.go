@@ -26,8 +26,9 @@ type Deps struct {
 	UIAssets fs.FS
 	// Logger is used for structured error logging. Optional; if nil, errors are not logged.
 	Logger *slog.Logger
-	// Prom is the optional Prometheus query client. If nil, /api/v1/metrics/* returns 503.
-	Prom QueryRanger
+	// Prom is the optional Prometheus query client. If nil, /api/v1/metrics/*
+	// and /api/v1/usage return 503.
+	Prom PromQuerier
 	// Osb is the optional OpenSandbox client. If nil, sandbox rows carry no
 	// OpenSandbox state and the list response omits its osb block.
 	Osb OsbClient
@@ -105,6 +106,7 @@ func New(d Deps) http.Handler {
 		r.Use(requireCacheSynced(d.CacheSynced, d.Logger))
 		if d.Client != nil {
 			r.Get("/overview", handleOverview(d))
+			r.Get("/usage", handleUsage(d))
 			r.Get("/sandboxes", handleSandboxList(d))
 			r.Get("/sandboxes/{namespace}/{name}", handleSandboxDetail(d))
 			r.Get("/sandboxes/{namespace}/{name}/osb", handleSandboxOsb(d))

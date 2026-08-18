@@ -31,6 +31,7 @@ The dashboard exposes:
 - `/healthz`, `/readyz` — for kubelet probes (already wired into the Deployment).
 - `/api/v1/overview`, `/api/v1/{sandboxes,claims,templates,warmpools}` — read-only JSON.
 - `/api/v1/metrics/{name}` — whitelisted Prometheus proxy (503 when Prometheus is unconfigured).
+- `/api/v1/usage` — live CPU/memory use per sandbox pod, keyed `namespace/pod` (503 when Prometheus is unconfigured, 502 when it is unreachable).
 - `/api/v1/sandboxes/{namespace}/{name}/osb` — OpenSandbox's own diagnostics for one sandbox (404 when the sandbox was not created by OpenSandbox, 503 when OpenSandbox is unconfigured).
 - `/` — the embedded SPA.
 
@@ -175,7 +176,7 @@ docker run --rm -p 8080:8080 -v ~/.kube/config:/kubeconfig \
 
 Single Go binary. Embeds a controller-runtime read-only Manager (`get`/`list`/`watch` informers for the four CRDs + Pods + Events) and an HTTP server. The SPA (React + Vite + Tailwind) is built and embedded via `embed.FS`; one container image, one Deployment. All API reads go through the informer cache so the kube-apiserver only sees the long-running watches.
 
-The Prometheus integration is a *soft dependency*: the dashboard runs without it; the metrics page surfaces the unconfigured state per-chart. OpenSandbox is a soft dependency the same way: the dashboard runs without it, and degrades to Kubernetes-only state rather than failing requests when it is unreachable.
+The Prometheus integration is a *soft dependency*: the dashboard runs without it; the metrics page surfaces the unconfigured state per-chart, and the overview's usage panels do the same. `/api/v1/usage` deliberately sits outside the sandbox list: joining live usage into the list would put Prometheus in the request path of the main table, so one outage would cost the whole page instead of one panel. Its queries are scoped to the namespaces sandboxes actually live in — on a 1500-pod cluster holding 169 sandboxes in one namespace, that is 267 series in 0.7s rather than 1527 in 1.6s. OpenSandbox is a soft dependency the same way: the dashboard runs without it, and degrades to Kubernetes-only state rather than failing requests when it is unreachable.
 
 ## Status
 
