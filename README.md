@@ -79,22 +79,29 @@ OPENSANDBOX_API_KEY=$(kubectl -n default get secret opensandbox-server-api-key \
 ```
 
 Sandboxes are matched to OpenSandbox records on the `opensandbox.io/id` label, not the
-resource name. Once configured, `GET /api/v1/sandboxes` enriches each sandbox row with:
+resource name.
 
-- `creator` — `opensandbox` when the label is present, otherwise `unknown`
+`creator` is derived from that label alone, so `GET /api/v1/sandboxes` reports it —
+`opensandbox` when the label is present, `unknown` otherwise — whether or not OpenSandbox is
+configured. So are the identity fields read from labels: `owner`, `team`, `experiment` and
+`sessionId`.
+
+Configuring OpenSandbox adds a per-row `osb` object:
+
 - `osb.state` plus OpenSandbox's own reason, message and expiry
 - `osb.diverged` — OpenSandbox's state disagrees with the Kubernetes Ready condition
 - `osb.stale` — a transient OpenSandbox state has not advanced within
   `AGENT_SANDBOX_DASHBOARD_OSB_STALE_AFTER` (default `60s`)
 
-and a sibling `osb` object reporting `status`, `reported` and `matched`. Filter with
-`?creator=`, `?osbState=` and `?stale=true`. The dashboard UI surfaces these as columns in a
-subsequent change; until then they are available from the API.
+plus a sibling `osb` object on the response reporting `status`, `reported` and `matched`.
+Filter with `?creator=`, `?osbState=` and `?stale=true`. The dashboard UI surfaces these as
+columns in a subsequent change; until then they are available from the API.
 
-Both integrations degrade quietly: with `OPENSANDBOX_URL` unset the fields are absent
-entirely, and if OpenSandbox is unreachable the list still returns 200 with Kubernetes data
-plus `osb.status: "unreachable"`. Note that `?stale=true` and `?osbState=` return an empty
-list in that state — check `osb.status` before reading an empty result as "nothing is stale".
+The `osb` fields are the only part that depends on configuration: with `OPENSANDBOX_URL`
+unset they are absent entirely and the rest of the row is unaffected, and if OpenSandbox is
+unreachable the list still returns 200 with Kubernetes data plus `osb.status: "unreachable"`.
+Note that `?stale=true` and `?osbState=` return an empty list in that state — check
+`osb.status` before reading an empty result as "nothing is stale".
 
 | Env | Default | Purpose |
 |---|---|---|
