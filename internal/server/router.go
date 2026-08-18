@@ -37,6 +37,9 @@ type Deps struct {
 	// OsbStaleAfter is how long a transient OpenSandbox state may sit before it
 	// is reported stale. If zero, DefaultOsbStaleAfter is used.
 	OsbStaleAfter time.Duration
+	// OsbTimeout bounds a single OpenSandbox inventory fetch. If zero,
+	// DefaultOsbTimeout is used.
+	OsbTimeout time.Duration
 }
 
 // OsbClient is the subset of *osb.Client the sandbox handlers depend on.
@@ -59,6 +62,14 @@ func (d Deps) staleAfter() time.Duration {
 		return DefaultOsbStaleAfter
 	}
 	return d.OsbStaleAfter
+}
+
+// osbTimeout returns the configured OpenSandbox fetch timeout, defaulting to DefaultOsbTimeout.
+func (d Deps) osbTimeout() time.Duration {
+	if d.OsbTimeout <= 0 {
+		return DefaultOsbTimeout
+	}
+	return d.OsbTimeout
 }
 
 // New returns a fully wired chi router.

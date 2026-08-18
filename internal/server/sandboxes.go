@@ -1,9 +1,9 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -60,7 +60,9 @@ func handleSandboxList(d Deps) http.HandlerFunc {
 			osbStatus *OsbStatus
 		)
 		if d.Osb != nil {
-			fetched, err := d.Osb.ListSandboxes(r.Context())
+			ctx, cancel := context.WithTimeout(r.Context(), d.osbTimeout())
+			fetched, err := d.Osb.ListSandboxes(ctx)
+			cancel()
 			if err != nil {
 				if d.Logger != nil {
 					d.Logger.Error("osb_list_failed", "err", err.Error())
@@ -75,6 +77,7 @@ func handleSandboxList(d Deps) http.HandlerFunc {
 
 		summaries := make([]ResourceSummary, 0, len(list.Items))
 		matched := 0
+		unrecognisedStates := map[string]int{}
 		for i := range list.Items {
 			item := &list.Items[i]
 			phase := readyPhase(item.Status.Conditions)
@@ -91,6 +94,9 @@ func handleSandboxList(d Deps) http.HandlerFunc {
 					matched++
 					v := newOsbView(s, phase, now, staleAfter)
 					view = &v
+					if !osbStateRecognised(s.Status.State) {
+						unrecognisedStates[s.Status.State]++
+					}
 				}
 			}
 
@@ -140,6 +146,15 @@ func handleSandboxList(d Deps) http.HandlerFunc {
 			}
 		}
 
+		// One log line per distinct unrecognised state per request, not once per
+		// row: an upstream rollout that ships a new state to a whole fleet must
+		// not spam the log per sandbox.
+		if d.Logger != nil {
+			for state, count := range unrecognisedStates {
+				d.Logger.Warn("osb_unrecognised_state", "state", state, "count", count)
+			}
+		}
+
 		writeJSON(w, http.StatusOK, sandboxListResponse{Items: summaries, Osb: osbStatus})
 	}
 }
@@ -149,22 +164,8 @@ func handleSandboxDetail(d Deps) http.HandlerFunc {
 		ns := chi.URLParam(r, "namespace")
 		name := chi.URLParam(r, "name")
 
-		var sb v1alpha1.Sandbox
-		if err := d.Client.Get(r.Context(), client.ObjectKey{Namespace: ns, Name: name}, &sb); err != nil {
-			if apierrors.IsNotFound(err) {
-				writeProblem(w, d.Logger, problemArgs{
-					Status: http.StatusNotFound,
-					Type:   "sandbox-not-found",
-					Detail: "sandbox not found",
-				})
-				return
-			}
-			writeProblem(w, d.Logger, problemArgs{
-				Status:    http.StatusInternalServerError,
-				Type:      "get-sandbox",
-				Detail:    "could not load sandbox",
-				LogReason: err.Error(),
-			})
+		sb, ok := getSandboxOrProblem(w, r, d, ns, name)
+		if !ok {
 			return
 		}
 
@@ -179,13 +180,46 @@ func handleSandboxDetail(d Deps) http.HandlerFunc {
 			events = []EventEntry{}
 		}
 
+		now := d.now()
+		phase := readyPhase(sb.Status.Conditions)
+		creator := creatorFor(sb.Labels)
+		owner, team, experiment, sessionID := identityFor(sb.Labels)
+
+		// An OpenSandbox failure here must not fail the detail response: the CR
+		// data is still worth serving. Mirrors handleSandboxList's fallback.
+		var view *OsbView
+		if d.Osb != nil {
+			if id := sb.Labels[OsbIDLabel]; id != "" {
+				ctx, cancel := context.WithTimeout(r.Context(), d.osbTimeout())
+				inventory, err := d.Osb.ListSandboxes(ctx)
+				cancel()
+				if err != nil {
+					if d.Logger != nil {
+						d.Logger.Error("osb_list_failed", "err", err.Error())
+					}
+				} else if s, found := inventory[id]; found {
+					v := newOsbView(s, phase, now, d.staleAfter())
+					view = &v
+					if !osbStateRecognised(s.Status.State) && d.Logger != nil {
+						d.Logger.Warn("osb_unrecognised_state", "state", s.Status.State, "count", 1)
+					}
+				}
+			}
+		}
+
 		writeJSON(w, http.StatusOK, SandboxDetail{
 			Summary: ResourceSummary{
 				Name:       sb.Name,
 				Namespace:  sb.Namespace,
 				Kind:       "Sandbox",
-				Phase:      readyPhase(sb.Status.Conditions),
-				AgeSeconds: ageSeconds(sb.ObjectMeta, time.Now()),
+				Phase:      phase,
+				AgeSeconds: ageSeconds(sb.ObjectMeta, now),
+				Creator:    creator,
+				Owner:      owner,
+				Team:       team,
+				Experiment: experiment,
+				SessionID:  sessionID,
+				Osb:        view,
 			},
 			Spec:        &sb.Spec,
 			Conditions:  sb.Status.Conditions,
@@ -195,6 +229,32 @@ func handleSandboxDetail(d Deps) http.HandlerFunc {
 			Events:      events,
 		})
 	}
+}
+
+// getSandboxOrProblem fetches the named Sandbox CR, writing the appropriate
+// problem+json response (and returning ok=false) when it cannot be found or
+// read. Shared by handleSandboxDetail and handleSandboxOsb, which otherwise
+// duplicated this lookup verbatim.
+func getSandboxOrProblem(w http.ResponseWriter, r *http.Request, d Deps, ns, name string) (v1alpha1.Sandbox, bool) {
+	var sb v1alpha1.Sandbox
+	if err := d.Client.Get(r.Context(), client.ObjectKey{Namespace: ns, Name: name}, &sb); err != nil {
+		if apierrors.IsNotFound(err) {
+			writeProblem(w, d.Logger, problemArgs{
+				Status: http.StatusNotFound,
+				Type:   "sandbox-not-found",
+				Detail: "sandbox not found",
+			})
+			return v1alpha1.Sandbox{}, false
+		}
+		writeProblem(w, d.Logger, problemArgs{
+			Status:    http.StatusInternalServerError,
+			Type:      "get-sandbox",
+			Detail:    "could not load sandbox",
+			LogReason: err.Error(),
+		})
+		return v1alpha1.Sandbox{}, false
+	}
+	return sb, true
 }
 
 // SandboxOsbDetail is the JSON returned by GET /api/v1/sandboxes/{ns}/{name}/osb.
@@ -217,21 +277,8 @@ func handleSandboxOsb(d Deps) http.HandlerFunc {
 		ns := chi.URLParam(r, "namespace")
 		name := chi.URLParam(r, "name")
 
-		var sb v1alpha1.Sandbox
-		if err := d.Client.Get(r.Context(), client.ObjectKey{Namespace: ns, Name: name}, &sb); err != nil {
-			if apierrors.IsNotFound(err) {
-				writeProblem(w, d.Logger, problemArgs{
-					Status: http.StatusNotFound, Type: "sandbox-not-found",
-					Detail: "sandbox not found",
-				})
-				return
-			}
-			writeProblem(w, d.Logger, problemArgs{
-				Status:    http.StatusInternalServerError,
-				Type:      "get-sandbox",
-				Detail:    "could not load sandbox",
-				LogReason: err.Error(),
-			})
+		sb, ok := getSandboxOrProblem(w, r, d, ns, name)
+		if !ok {
 			return
 		}
 

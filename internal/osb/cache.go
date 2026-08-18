@@ -12,7 +12,12 @@ type Lister interface {
 	ListSandboxes(ctx context.Context) (map[string]Sandbox, error)
 }
 
-// Cache is a TTL cache in front of a Lister.
+// Cache is a TTL cache in front of a Lister. A failed fetch is cached for the
+// TTL the same as a success: the mutex below is held across the upstream
+// call, so if failures were retried on every request, a wedged OpenSandbox
+// would turn every concurrent caller into its own multi-second stall instead
+// of sharing one failed attempt. The caller still sees the error every time —
+// only the retry is throttled, not the failure itself.
 //
 // ponytail: one mutex held across the upstream fetch, not singleflight.
 // Concurrent callers block on the same fetch, which is the same outcome for
@@ -25,6 +30,7 @@ type Cache struct {
 
 	mu        sync.Mutex
 	cached    map[string]Sandbox
+	cachedErr error
 	fetchedAt time.Time
 }
 
@@ -38,21 +44,27 @@ func NewCache(inner Lister, ttl time.Duration, now func() time.Time) *Cache {
 }
 
 // ListSandboxes returns the cached inventory if it is younger than the TTL,
-// otherwise it fetches from upstream. Errors are never cached. The returned
-// map is the caller's own copy: mutating it never affects the cache or any
-// other caller.
+// otherwise it fetches from upstream. A failed fetch is cached for the TTL
+// just like a success, and returned to every caller until it expires — see
+// the Cache doc comment for why. The returned map is the caller's own copy:
+// mutating it never affects the cache or any other caller.
 func (c *Cache) ListSandboxes(ctx context.Context) (map[string]Sandbox, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if c.cached != nil && c.ttl > 0 && c.now().Sub(c.fetchedAt) < c.ttl {
+	if !c.fetchedAt.IsZero() && c.ttl > 0 && c.now().Sub(c.fetchedAt) < c.ttl {
+		if c.cachedErr != nil {
+			return nil, c.cachedErr
+		}
 		return maps.Clone(c.cached), nil
 	}
 	fresh, err := c.inner.ListSandboxes(ctx)
+	c.fetchedAt = c.now()
+	c.cachedErr = err
 	if err != nil {
+		c.cached = nil
 		return nil, err
 	}
 	c.cached = fresh
-	c.fetchedAt = c.now()
 	return maps.Clone(fresh), nil
 }

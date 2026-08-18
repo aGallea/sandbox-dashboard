@@ -127,6 +127,7 @@ func main() {
 		UIAssets:      assets,
 		Logger:        logger,
 		OsbStaleAfter: durationFromEnv("AGENT_SANDBOX_DASHBOARD_OSB_STALE_AFTER", server.DefaultOsbStaleAfter),
+		OsbTimeout:    durationFromEnv("AGENT_SANDBOX_DASHBOARD_OSB_TIMEOUT", server.DefaultOsbTimeout),
 	}
 	// Only assign Prom when the client was actually created. Assigning a typed
 	// nil *prom.Client to a server.QueryRanger field would wrap it in a

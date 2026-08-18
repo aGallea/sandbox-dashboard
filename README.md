@@ -6,7 +6,7 @@ Aggregates `Sandbox`, `SandboxClaim`, `SandboxTemplate`, and `SandboxWarmPool` s
 ## What it does
 
 - **Overview** of all four CRDs with per-phase counts.
-- **List + detail drawer** per resource kind, with status conditions, spec (YAML), and recent events.
+- **List + detail drawer** per resource kind, with status conditions, spec (YAML), recent events, and — for sandboxes, when configured — OpenSandbox's own lifecycle state alongside the Kubernetes Ready condition.
 - **Metrics page** with four charts (sandbox creation latency p50/p95, claim startup latency p50/p95, claim controller startup latency p50/p95, claim creation rate). Backed by a whitelisted Prometheus proxy — the SPA never sends raw PromQL.
 - Read-only RBAC. No write actions, no in-app auth (delegated to whatever ingress is in front).
 
@@ -31,6 +31,7 @@ The dashboard exposes:
 - `/healthz`, `/readyz` — for kubelet probes (already wired into the Deployment).
 - `/api/v1/overview`, `/api/v1/{sandboxes,claims,templates,warmpools}` — read-only JSON.
 - `/api/v1/metrics/{name}` — whitelisted Prometheus proxy (503 when Prometheus is unconfigured).
+- `/api/v1/sandboxes/{namespace}/{name}/osb` — OpenSandbox's own diagnostics for one sandbox (404 when the sandbox was not created by OpenSandbox, 503 when OpenSandbox is unconfigured).
 - `/` — the embedded SPA.
 
 ### Configuring Prometheus (optional)
@@ -174,7 +175,7 @@ docker run --rm -p 8080:8080 -v ~/.kube/config:/kubeconfig \
 
 Single Go binary. Embeds a controller-runtime read-only Manager (`get`/`list`/`watch` informers for the four CRDs + Pods + Events) and an HTTP server. The SPA (React + Vite + Tailwind) is built and embedded via `embed.FS`; one container image, one Deployment. All API reads go through the informer cache so the kube-apiserver only sees the long-running watches.
 
-The Prometheus integration is a *soft dependency*: the dashboard runs without it; the metrics page surfaces the unconfigured state per-chart.
+The Prometheus integration is a *soft dependency*: the dashboard runs without it; the metrics page surfaces the unconfigured state per-chart. OpenSandbox is a soft dependency the same way: the dashboard runs without it, and degrades to Kubernetes-only state rather than failing requests when it is unreachable.
 
 ## Status
 

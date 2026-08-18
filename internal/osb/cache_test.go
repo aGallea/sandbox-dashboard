@@ -73,7 +73,12 @@ func TestCache_ConcurrentCallersTriggerOneUpstreamFetch(t *testing.T) {
 	require.Equal(t, int32(1), inner.calls.Load(), "ten concurrent callers must share one upstream fetch")
 }
 
-func TestCache_DoesNotCacheErrors(t *testing.T) {
+// TestCache_CachesFailureForTheTTL pins the inverse of the old behaviour: with
+// the mutex held across the upstream fetch, retrying a failure on every
+// request would turn a wedged OpenSandbox into serialized multi-second stalls
+// for every waiter. One failed attempt per TTL is the point — the caller still
+// sees the error every time, it just isn't the one paying for a fresh dial.
+func TestCache_CachesFailureForTheTTL(t *testing.T) {
 	inner := &fakeLister{err: errors.New("upstream down")}
 	now := time.Date(2026, 8, 17, 14, 0, 0, 0, time.UTC)
 	c := NewCache(inner, 5*time.Second, func() time.Time { return now })
@@ -82,8 +87,12 @@ func TestCache_DoesNotCacheErrors(t *testing.T) {
 	require.Error(t, err)
 	_, err = c.ListSandboxes(context.Background())
 	require.Error(t, err)
+	require.Equal(t, int32(1), inner.calls.Load(), "two calls inside the TTL must share one failed upstream attempt")
 
-	require.Equal(t, int32(2), inner.calls.Load(), "a failed fetch must be retried, not cached")
+	now = now.Add(6 * time.Second)
+	_, err = c.ListSandboxes(context.Background())
+	require.Error(t, err)
+	require.Equal(t, int32(2), inner.calls.Load(), "a fresh attempt must be made once the TTL expires")
 }
 
 func TestCache_MutatingReturnedMapDoesNotAffectCache(t *testing.T) {

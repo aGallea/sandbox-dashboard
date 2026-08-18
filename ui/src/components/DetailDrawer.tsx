@@ -8,6 +8,7 @@ import {
   type ClaimDetail,
   type TemplateDetail,
   type WarmPoolDetail,
+  type OsbView,
 } from '../api/client';
 import { ConditionsTable } from './ConditionsTable';
 import { EventsList } from './EventsList';
@@ -104,7 +105,7 @@ function SandboxBody({
         <h3 className="text-sm font-semibold mb-2">Events</h3>
         <EventsList events={d.events} />
       </section>
-      <OsbSection namespace={namespace} name={name} />
+      <OsbSection namespace={namespace} name={name} osb={d.summary.osb} />
     </>
   );
 }
@@ -155,8 +156,17 @@ function WarmPoolBody({ d }: { d: WarmPoolDetail }) {
   );
 }
 
-function OsbSection({ namespace, name }: { namespace: string; name: string }) {
-  const { data, isFetching, error } = useQuery({
+function OsbSection({
+  namespace,
+  name,
+  osb,
+}: {
+  namespace: string;
+  name: string;
+  /** OpenSandbox's own watch-fed view, from the sandbox's ResourceSummary. */
+  osb?: OsbView;
+}) {
+  const { data, isFetching, error, dataUpdatedAt } = useQuery({
     queryKey: ['osb-detail', namespace, name],
     queryFn: () => fetchSandboxOsb(namespace, name),
     // Only poll once we actually have diagnostics. On any error the query keeps
@@ -167,36 +177,64 @@ function OsbSection({ namespace, name }: { namespace: string; name: string }) {
     retry: false,
   });
 
-  // Render nothing until the query settles. The section legitimately does not
-  // apply to most sandboxes (404) or to an unconfigured install (503), so
-  // showing a heading first would make it flash and vanish on every one of them.
-  if (isFetching && !data && !error) return null;
-
-  // Not an OpenSandbox sandbox, or OpenSandbox is not configured: show nothing
-  // rather than an error the operator can do nothing about.
   const msg = (error as Error | null)?.message;
-  if (msg === 'not-an-opensandbox-sandbox' || msg === 'opensandbox-unconfigured') return null;
+  // The diagnostics half legitimately does not apply to most sandboxes (404)
+  // or to an unconfigured install (503).
+  const diagnosticsInapplicable =
+    msg === 'not-an-opensandbox-sandbox' || msg === 'opensandbox-unconfigured';
+
+  // Without a watch-fed view to fall back on, keep the original contract:
+  // nothing until the diagnostics query settles (avoids a flash on every
+  // sandbox), and nothing when diagnostics do not apply. With a watch-fed
+  // view, that view is exactly what an operator needs when diagnostics are
+  // unavailable, so the section always renders.
+  if (!osb) {
+    if (isFetching && !data && !error) return null;
+    if (diagnosticsInapplicable) return null;
+  }
 
   return (
-    <section>
-      <h3 className="text-sm font-semibold mb-2">OpenSandbox</h3>
-      {error && !data && <div className="text-sm text-red-700">{msg}</div>}
-      {error && data && (
-        <div className="text-sm text-amber-700">
-          Showing the last successful fetch — the latest attempt failed: {msg}
+    <section className="space-y-3">
+      {osb && (
+        <div>
+          <h3 className="text-sm font-semibold mb-2">OpenSandbox state (from its watch)</h3>
+          <dl className="grid grid-cols-2 gap-x-3 text-sm">
+            <dt className="text-slate-500">State</dt>
+            <dd>{osb.state || '—'}</dd>
+            <dt className="text-slate-500">Reason</dt>
+            <dd>{osb.reason || '—'}</dd>
+            <dt className="text-slate-500">Message</dt>
+            <dd className="break-words">{osb.message || '—'}</dd>
+            <dt className="text-slate-500">Expiry</dt>
+            <dd>{osb.expiresAt ? new Date(osb.expiresAt).toLocaleString() : '—'}</dd>
+            <dt className="text-slate-500">State age</dt>
+            <dd className="tabular-nums">{osb.stateAgeSeconds}s</dd>
+          </dl>
         </div>
       )}
-      {data && (
-        <>
-          <div className="text-xs text-slate-500 mb-1">id: {data.id}</div>
-          <pre className="text-xs bg-slate-50 border border-slate-200 rounded p-2 overflow-x-auto whitespace-pre">
-            {data.summary}
-          </pre>
-          <h4 className="text-xs font-semibold mt-3 mb-1">OpenSandbox events</h4>
-          <pre className="text-xs bg-slate-50 border border-slate-200 rounded p-2 overflow-x-auto whitespace-pre">
-            {data.events}
-          </pre>
-        </>
+      {!diagnosticsInapplicable && (
+        <div>
+          <h3 className="text-sm font-semibold mb-2">Diagnostics (read on demand)</h3>
+          {error && !data && <div className="text-sm text-red-700">{msg}</div>}
+          {error && data && (
+            <div className="text-sm text-amber-700">
+              Showing the last successful fetch from {new Date(dataUpdatedAt).toLocaleTimeString()}{' '}
+              — the latest attempt failed: {msg}
+            </div>
+          )}
+          {data && (
+            <>
+              <div className="text-xs text-slate-500 mb-1">id: {data.id}</div>
+              <pre className="text-xs bg-slate-50 border border-slate-200 rounded p-2 overflow-x-auto whitespace-pre">
+                {data.summary}
+              </pre>
+              <h4 className="text-xs font-semibold mt-3 mb-1">OpenSandbox events</h4>
+              <pre className="text-xs bg-slate-50 border border-slate-200 rounded p-2 overflow-x-auto whitespace-pre">
+                {data.events}
+              </pre>
+            </>
+          )}
+        </div>
       )}
     </section>
   );

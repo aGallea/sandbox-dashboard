@@ -51,11 +51,26 @@ func agrees(osbState, phase string) bool {
 	return false
 }
 
+// osbStateRecognised reports whether state is a key of osbAgreement. Callers
+// use this to log an unrecognised upstream state once per request, rather
+// than reaching into the map directly.
+func osbStateRecognised(state string) bool {
+	_, ok := osbAgreement[state]
+	return ok
+}
+
 // DefaultOsbStaleAfter is how long a non-terminal OpenSandbox state may sit
 // unchanged before it is reported stale. Sixty seconds comes from measurement,
 // not taste: pods in algo-studio reached Ready about two seconds after
 // creation, so a minute is already far outside normal.
 const DefaultOsbStaleAfter = 60 * time.Second
+
+// DefaultOsbTimeout bounds a single OpenSandbox inventory fetch. 2s is
+// generous: a live fetch of 166 records takes tens of milliseconds. The point
+// is to fail fast enough that the HTTP server's WriteTimeout never races it,
+// leaving the informer-cached Kubernetes data servable even when OpenSandbox
+// is wedged.
+const DefaultOsbTimeout = 2 * time.Second
 
 // osbTransientStates are the states a sandbox should pass through in seconds.
 // Age against these is meaningful. Running, Terminated and Failed are resting

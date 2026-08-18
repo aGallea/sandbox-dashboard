@@ -96,6 +96,81 @@ func TestSandboxes_Detail_IncludesSpecStatusEvents(t *testing.T) {
 	require.NotNil(t, got.Events)
 }
 
+// TestSandboxes_Detail_IncludesIdentityAndOsbView pins that the detail
+// handler carries the same identity and OpenSandbox fields as the list
+// handler, not just id/spec/events. Before this fix, an operator opening the
+// drawer for a `Pending ⚠ 9m ⏱` row saw no reason, message, or
+// lastTransitionAt anywhere — only the on-demand diagnostics, which is the
+// side that stayed correct during the incident.
+func TestSandboxes_Detail_IncludesIdentityAndOsbView(t *testing.T) {
+	created := time.Date(2026, 8, 17, 14, 8, 57, 0, time.UTC)
+	observed := time.Date(2026, 8, 17, 14, 11, 40, 0, time.UTC)
+
+	objs := []client.Object{
+		&v1alpha1.Sandbox{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "sandbox-726f8779", Namespace: "default",
+				Labels: map[string]string{
+					OsbIDLabel:   "726f8779",
+					"session_id": "regex-chess__33BjxVG__env",
+				},
+			},
+			Status: v1alpha1.SandboxStatus{Conditions: []metav1.Condition{{Type: "Ready", Status: metav1.ConditionTrue}}},
+		},
+	}
+	o := &fakeOsb{list: map[string]osb.Sandbox{
+		"726f8779": {
+			ID: "726f8779",
+			Status: osb.Status{
+				State: "Pending", Reason: "SANDBOX_PENDING",
+				Message: "Sandbox is pending scheduling", LastTransitionAt: &created,
+			},
+		},
+	}}
+
+	rec := httptest.NewRecorder()
+	osbTestDeps(t, objs, o, observed).ServeHTTP(rec,
+		httptest.NewRequest(http.MethodGet, "/api/v1/sandboxes/default/sandbox-726f8779", nil))
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var got SandboxDetail
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+
+	require.Equal(t, CreatorOpenSandbox, got.Summary.Creator)
+	require.Equal(t, "regex-chess__33BjxVG__env", got.Summary.SessionID)
+	require.NotNil(t, got.Summary.Osb)
+	require.Equal(t, "Pending", got.Summary.Osb.State)
+	require.Equal(t, "SANDBOX_PENDING", got.Summary.Osb.Reason)
+	require.Equal(t, "Sandbox is pending scheduling", got.Summary.Osb.Message)
+	require.True(t, got.Summary.Osb.Diverged, "OpenSandbox Pending against a Ready pod is a disagreement")
+	require.True(t, got.Summary.Osb.Stale, "the state had not moved in 2m43s")
+}
+
+// TestSandboxes_Detail_OsbFailureDoesNotFailTheResponse mirrors the list
+// handler's contract: an OpenSandbox outage must never turn a working CR read
+// into an error response.
+func TestSandboxes_Detail_OsbFailureDoesNotFailTheResponse(t *testing.T) {
+	objs := []client.Object{
+		&v1alpha1.Sandbox{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "sandbox-abc", Namespace: "default",
+				Labels: map[string]string{OsbIDLabel: "abc"},
+			},
+			Status: v1alpha1.SandboxStatus{Conditions: []metav1.Condition{{Type: "Ready", Status: metav1.ConditionTrue}}},
+		},
+	}
+	o := &fakeOsb{err: errors.New("dial tcp: connection refused")}
+
+	rec := httptest.NewRecorder()
+	osbTestDeps(t, objs, o, time.Now()).ServeHTTP(rec,
+		httptest.NewRequest(http.MethodGet, "/api/v1/sandboxes/default/sandbox-abc", nil))
+
+	require.Equal(t, http.StatusOK, rec.Code, "an OpenSandbox outage must not fail the detail response")
+	var got SandboxDetail
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Nil(t, got.Summary.Osb)
+}
+
 func TestSandboxes_Detail_404OnMissing(t *testing.T) {
 	c := fake.NewClientBuilder().WithScheme(k8s.NewScheme()).Build()
 	r := New(Deps{Client: c, CacheSynced: func() bool { return true }})

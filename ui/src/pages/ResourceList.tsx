@@ -135,12 +135,15 @@ export function ResourceListPage({ kind }: Props) {
             OpenSandbox is unreachable — showing Kubernetes state only.
           </div>
         )}
-        {data?.osb?.status === 'ok' && data.osb.reported !== data.osb.matched && (
-          <div className="mx-6 mt-3 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-            OpenSandbox reported {data.osb.reported} sandboxes; {data.osb.matched} matched a
-            Kubernetes resource.
-          </div>
-        )}
+        {data?.osb?.status === 'ok' &&
+          data.osb.reported - data.osb.matched > Math.max(5, data.osb.reported * 0.1) && (
+            <div className="mx-6 mt-3 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              OpenSandbox reported {data.osb.reported} sandboxes; only {data.osb.matched} matched a
+              Kubernetes resource. A small deficit is expected briefly after deletions — the
+              cached OpenSandbox inventory can lag the live cluster state by up to the cache TTL —
+              but a gap this large usually means the join key stopped being stamped.
+            </div>
+          )}
 
         {isLoading && <div className="p-6 text-slate-500">Loading…</div>}
         {error && <div className="p-6 text-red-700">Error: {(error as Error).message}</div>}
