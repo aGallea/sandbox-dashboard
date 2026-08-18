@@ -152,3 +152,26 @@ func (c *Client) ListSandboxes(ctx context.Context) (map[string]Sandbox, error) 
 	}
 	return out, nil
 }
+
+// Diagnostics is OpenSandbox's own diagnostic output for one sandbox. Both
+// fields are plain text as returned by the API, not JSON.
+type Diagnostics struct {
+	Summary string `json:"summary"`
+	Events  string `json:"events"`
+}
+
+// Diagnostics fetches the summary and event text for one sandbox id. These
+// routes are served by on-demand Kubernetes reads rather than OpenSandbox's
+// watch-fed state, so they stay accurate even when the watch has stalled.
+func (c *Client) Diagnostics(ctx context.Context, id string) (Diagnostics, error) {
+	esc := url.PathEscape(id)
+	summary, err := c.get(ctx, "/v1/sandboxes/"+esc+"/diagnostics/summary")
+	if err != nil {
+		return Diagnostics{}, err
+	}
+	events, err := c.get(ctx, "/v1/sandboxes/"+esc+"/diagnostics/events")
+	if err != nil {
+		return Diagnostics{}, err
+	}
+	return Diagnostics{Summary: string(summary), Events: string(events)}, nil
+}

@@ -152,3 +152,59 @@ func TestListSandboxes_StopsAtPageCapWhenServerAlwaysClaimsNextPage(t *testing.T
 	require.NoError(t, err, "hitting the cap is not an error; it is a bounded read")
 	require.Equal(t, maxPages, requests, "must stop at the page cap rather than loop forever")
 }
+
+func TestDiagnostics_ReturnsSummaryAndEventsAsPlainText(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/sandboxes/abc/diagnostics/summary":
+			_, _ = w.Write([]byte("SANDBOX DIAGNOSTICS SUMMARY\nPhase: Running\n"))
+		case "/v1/sandboxes/abc/diagnostics/events":
+			_, _ = w.Write([]byte("[14:08:57] Normal Scheduled Successfully assigned\n"))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	c, err := NewClient(srv.URL, "k")
+	require.NoError(t, err)
+
+	d, err := c.Diagnostics(context.Background(), "abc")
+	require.NoError(t, err)
+	require.Contains(t, d.Summary, "Phase: Running")
+	require.Contains(t, d.Events, "Successfully assigned")
+}
+
+func TestDiagnostics_EscapesSandboxIDInPath(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.EscapedPath()
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer srv.Close()
+
+	c, err := NewClient(srv.URL, "k")
+	require.NoError(t, err)
+	_, err = c.Diagnostics(context.Background(), "a/../b")
+	require.NoError(t, err)
+
+	// What matters is that the separators are percent-encoded, so the id stays a
+	// single path segment. The literal ".." survives escaping and is harmless
+	// once it cannot be preceded by an unescaped slash.
+	require.Contains(t, gotPath, "a%2F..%2Fb", "the id's slashes must be escaped")
+	require.NotContains(t, gotPath, "/../", "no traversable segment may reach the server")
+}
+
+func TestDiagnostics_ErrorsWhenSandboxUnknown(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"code":"KUBERNETES::SANDBOX_NOT_FOUND","message":"Sandbox 'zzz' not found"}`))
+	}))
+	defer srv.Close()
+
+	c, err := NewClient(srv.URL, "k")
+	require.NoError(t, err)
+	_, err = c.Diagnostics(context.Background(), "zzz")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "404")
+}
