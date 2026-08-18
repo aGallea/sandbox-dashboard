@@ -50,6 +50,23 @@ func TestIdentityFor_ReadsOwnerTeamExperimentFromLabels(t *testing.T) {
 	require.Equal(t, "tbv-v2", experiment)
 }
 
+func TestIdentityFor_ReadsOwnerFromTheDomainQualifiedLabel(t *testing.T) {
+	owner, _, _, _ := identityFor(map[string]string{"ai21.com/owner": "odeda"})
+	require.Equal(t, "odeda", owner)
+}
+
+func TestIdentityFor_PrefersTheDomainQualifiedOwnerLabel(t *testing.T) {
+	owner, _, _, _ := identityFor(map[string]string{
+		"ai21.com/owner": "odeda", "owner": "stale-value",
+	})
+	require.Equal(t, "odeda", owner)
+}
+
+func TestIdentityFor_IgnoresAnEmptyOwnerLabel(t *testing.T) {
+	owner, _, _, _ := identityFor(map[string]string{"ai21.com/owner": "", "owner": "odeda"})
+	require.Equal(t, "odeda", owner)
+}
+
 func TestIdentityFor_ToleratesPartialMetadata(t *testing.T) {
 	// 30 of 92 sandboxes measured in algo-studio carried only session_id.
 	owner, team, experiment, sessionID := identityFor(map[string]string{"session_id": "abc__env"})
