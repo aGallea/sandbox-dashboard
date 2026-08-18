@@ -42,6 +42,13 @@ export function ResourceListPage({ kind }: Props) {
     return Array.from(set).sort();
   }, [data]);
 
+  // These filters can only be satisfied when OpenSandbox data is present, so a
+  // filtered empty list means "could not compute", not "nothing matched".
+  // Gated on cfg.showOsb because the other resource kinds never return an osb
+  // field, which would otherwise make this true for them and hide their rows.
+  const osbFilterActive = cfg.showOsb && (staleOnly || osbStateFilter !== '');
+  const osbFilterUnsatisfiable = osbFilterActive && !!data && data.osb?.status !== 'ok';
+
   const updateFilter = (key: 'namespace' | 'phase' | 'creator' | 'osbState' | 'stale', value: string) => {
     const next = new URLSearchParams(searchParams);
     if (value) next.set(key, value);
@@ -115,7 +122,7 @@ export function ResourceListPage({ kind }: Props) {
           )}
         </div>
 
-        {(staleOnly || osbStateFilter) && data && data.osb?.status !== 'ok' && (
+        {osbFilterUnsatisfiable && (
           <div className="mx-6 mt-3 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
             This filter needs OpenSandbox, which is{' '}
             {data.osb?.status === 'unreachable' ? 'unreachable' : 'not configured'}. An empty result
@@ -123,7 +130,7 @@ export function ResourceListPage({ kind }: Props) {
           </div>
         )}
 
-        {data?.osb?.status === 'unreachable' && (
+        {!osbFilterUnsatisfiable && data?.osb?.status === 'unreachable' && (
           <div className="mx-6 mt-3 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
             OpenSandbox is unreachable — showing Kubernetes state only.
           </div>
@@ -138,7 +145,7 @@ export function ResourceListPage({ kind }: Props) {
         {isLoading && <div className="p-6 text-slate-500">Loading…</div>}
         {error && <div className="p-6 text-red-700">Error: {(error as Error).message}</div>}
 
-        {(staleOnly || osbStateFilter) && data && data.osb?.status !== 'ok' ? null : data && (
+        {osbFilterUnsatisfiable ? null : data && (
           <table className="w-full text-sm">
             <thead className="text-left text-slate-500 bg-white">
               <tr>
