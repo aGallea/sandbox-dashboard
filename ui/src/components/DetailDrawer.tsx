@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
   fetchDetail,
+  fetchSandboxOsb,
   type ResourceKind,
   type SandboxDetail,
   type ClaimDetail,
@@ -63,7 +64,9 @@ export function DetailDrawer({ kind, namespace, name, listUrl }: Props) {
 
       {data && (
         <div className="p-4 space-y-4">
-          {kind === 'sandboxes' && <SandboxBody d={data as SandboxDetail} />}
+          {kind === 'sandboxes' && (
+            <SandboxBody d={data as SandboxDetail} namespace={namespace} name={name} />
+          )}
           {kind === 'claims' && <ClaimBody d={data as ClaimDetail} />}
           {kind === 'templates' && <TemplateBody d={data as TemplateDetail} />}
           {kind === 'warmpools' && <WarmPoolBody d={data as WarmPoolDetail} />}
@@ -73,7 +76,15 @@ export function DetailDrawer({ kind, namespace, name, listUrl }: Props) {
   );
 }
 
-function SandboxBody({ d }: { d: SandboxDetail }) {
+function SandboxBody({
+  d,
+  namespace,
+  name,
+}: {
+  d: SandboxDetail;
+  namespace: string;
+  name: string;
+}) {
   return (
     <>
       <section>
@@ -93,6 +104,7 @@ function SandboxBody({ d }: { d: SandboxDetail }) {
         <h3 className="text-sm font-semibold mb-2">Events</h3>
         <EventsList events={d.events} />
       </section>
+      <OsbSection namespace={namespace} name={name} />
     </>
   );
 }
@@ -140,5 +152,39 @@ function WarmPoolBody({ d }: { d: WarmPoolDetail }) {
       </section>
       <YamlBlock value={d.spec} />
     </>
+  );
+}
+
+function OsbSection({ namespace, name }: { namespace: string; name: string }) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['osb-detail', namespace, name],
+    queryFn: () => fetchSandboxOsb(namespace, name),
+    refetchInterval: 10_000,
+    retry: false,
+  });
+
+  // Not an OpenSandbox sandbox, or OpenSandbox is not configured: show nothing
+  // rather than an error the operator can do nothing about.
+  const msg = (error as Error | null)?.message;
+  if (msg === 'not-an-opensandbox-sandbox' || msg === 'opensandbox-unconfigured') return null;
+
+  return (
+    <section>
+      <h3 className="text-sm font-semibold mb-2">OpenSandbox</h3>
+      {isLoading && <div className="text-sm text-slate-500">Loading…</div>}
+      {error && <div className="text-sm text-red-700">{msg}</div>}
+      {data && (
+        <>
+          <div className="text-xs text-slate-500 mb-1">id: {data.id}</div>
+          <pre className="text-xs bg-slate-50 border border-slate-200 rounded p-2 overflow-x-auto whitespace-pre">
+            {data.summary}
+          </pre>
+          <h4 className="text-xs font-semibold mt-3 mb-1">OpenSandbox events</h4>
+          <pre className="text-xs bg-slate-50 border border-slate-200 rounded p-2 overflow-x-auto whitespace-pre">
+            {data.events}
+          </pre>
+        </>
+      )}
+    </section>
   );
 }
