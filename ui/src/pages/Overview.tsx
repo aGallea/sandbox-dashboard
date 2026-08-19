@@ -151,6 +151,22 @@ export function OverviewPage() {
         />
       </div>
 
+      {!items.length ? (
+        <Panel title="Fleet health">
+          <div className="py-6 text-center">
+            <p className="text-sm text-slate-600">
+              No sandboxes in this cluster yet — nothing to chart.
+            </p>
+            <p className="mx-auto mt-2 max-w-xl text-xs text-slate-500">
+              Fleet health, reservations against live use, share and runtime breakdowns and the
+              resource footprint all appear here as soon as the first Sandbox is created. If you
+              expected some, check you are pointed at the right cluster and that the dashboard can
+              list sandboxes across namespaces.
+            </p>
+          </div>
+        </Panel>
+      ) : (
+        <>
       <Panel title="Fleet health" hint={`${items.length} sandboxes, oldest first`}>
         <TriageChips alerts={view.triage} />
         <div className="mt-4">
@@ -278,6 +294,8 @@ export function OverviewPage() {
         >
           <FootprintBars slices={view.groups} showGpu={showGpu} />
         </Panel>
+      )}
+        </>
       )}
     </div>
   );

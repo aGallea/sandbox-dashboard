@@ -109,6 +109,13 @@ export function ResourceListPage({ kind }: Props) {
   // some workloads; a column of nothing but em-dashes is worse than no column.
   const showOwner = cfg.showOsb && options.owner?.length > 0;
 
+  // The response omits `osb` entirely when no OPENSANDBOX_URL is set, which is
+  // how the UI can tell "not configured" from "configured but unreachable". The
+  // OpenSandbox column and its stale filter appear only for the former — the
+  // same em-dash rule as Owner above, and a filter that could only ever return
+  // nothing is worse than no filter.
+  const osbConfigured = cfg.showOsb && !!data?.osb;
+
   // Stale is computed by OpenSandbox, so a filtered empty list means "could not
   // compute", not "nothing matched". Gated on cfg.showOsb because the other
   // resource kinds never return an osb field, which would otherwise make this
@@ -216,7 +223,7 @@ export function ResourceListPage({ kind }: Props) {
               onPageSize={setPageSize}
             />
           )}
-          {cfg.showOsb && (
+          {osbConfigured && (
             <label className="flex items-center gap-1 text-sm text-slate-600">
               <input
                 type="checkbox"
@@ -268,7 +275,7 @@ export function ResourceListPage({ kind }: Props) {
                 {cfg.showPhase && (
                   <ColumnHeader label="Phase" col="phase" sort={sort} filter={filterFor('phase')} />
                 )}
-                {cfg.showOsb && (
+                {osbConfigured && (
                   <ColumnHeader
                     label="OSB State"
                     col="osbState"
@@ -324,7 +331,7 @@ export function ResourceListPage({ kind }: Props) {
                         <PhasePill phase={it.phase} />
                       </td>
                     )}
-                    {cfg.showOsb && (
+                    {osbConfigured && (
                       <td className="px-3 py-2">
                         <OsbStatePill osb={it.osb} />
                       </td>

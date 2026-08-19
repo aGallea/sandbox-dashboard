@@ -46,7 +46,10 @@ type MetricSection struct {
 // itself from this rather than from a list duplicated in the SPA, so adding a
 // chart is a change in one place.
 type MetricCatalog struct {
-	Sections []MetricSection `json:"sections"`
+	// PrometheusConfigured lets the page say once that the integration is off,
+	// instead of asking for every chart and printing the same 503 ten times.
+	PrometheusConfigured bool            `json:"prometheusConfigured"`
+	Sections             []MetricSection `json:"sections"`
 }
 
 // handleMetricCatalog lists the available charts. It answers without Prometheus:
@@ -54,7 +57,7 @@ type MetricCatalog struct {
 // unconfigured state itself.
 func handleMetricCatalog(d Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
-		catalog := MetricCatalog{}
+		catalog := MetricCatalog{PrometheusConfigured: d.Prom != nil}
 		for _, s := range d.metrics().Sections() {
 			section := MetricSection{Name: s.Name, Note: s.Note, Metrics: make([]MetricInfo, 0, len(s.Metrics))}
 			for _, m := range s.Metrics {

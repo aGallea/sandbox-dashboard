@@ -60,7 +60,27 @@ export function MetricsPage() {
         </p>
       )}
 
-      {catalog.data?.sections.map((section) => (
+      {/* One clear statement beats the same sentence on ten cards — and asking
+          for charts we know cannot answer only fills the console with 503s. */}
+      {catalog.data && !catalog.data.prometheusConfigured && (
+        <div className="rounded-xl border border-slate-200 bg-white p-6">
+          <h2 className="text-sm font-semibold text-slate-900">Prometheus is not configured</h2>
+          <p className="mt-1 max-w-2xl text-sm text-slate-600">
+            These charts read from Prometheus, which this install has no URL for. Set one and the
+            page fills in — nothing else about the dashboard changes.
+          </p>
+          <pre className="mt-3 overflow-x-auto rounded-lg bg-slate-50 p-3 text-xs text-slate-700">
+helm upgrade --install sandbox-dashboard oci://ghcr.io/agallea/charts/sandbox-dashboard \
+  --set prometheus.url=http://prometheus.monitoring.svc:9090</pre>
+          <p className="mt-3 text-xs text-slate-500">
+            {catalog.data.sections.reduce((n, s) => n + s.metrics.length, 0)} charts are waiting:{' '}
+            {catalog.data.sections.map((s) => s.name.toLowerCase()).join(', ')}.
+          </p>
+        </div>
+      )}
+
+      {catalog.data?.prometheusConfigured &&
+        catalog.data.sections.map((section) => (
         <section key={section.name} className="space-y-3">
           <div className="border-b border-slate-200 pb-2">
             <h2 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
@@ -76,7 +96,7 @@ export function MetricsPage() {
             ))}
           </div>
         </section>
-      ))}
+        ))}
     </div>
   );
 }

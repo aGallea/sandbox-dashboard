@@ -259,6 +259,8 @@ export interface MetricSection {
 }
 
 export interface MetricCatalog {
+  /** False when the install has no Prometheus: the page says so once. */
+  prometheusConfigured: boolean;
   sections: MetricSection[];
 }
 

@@ -186,3 +186,27 @@ func TestMetrics_UsesTheConfiguredControllerJob(t *testing.T) {
 	require.NotEmpty(t, stub.asked)
 	require.Contains(t, stub.asked[0], `job="my-controller"`)
 }
+
+// The page asks the catalog whether Prometheus is configured so it can say so
+// once, rather than requesting ten charts and rendering ten identical 503s.
+func TestMetricCatalog_ReportsWhetherPrometheusIsConfigured(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		deps Deps
+		want bool
+	}{
+		{"configured", Deps{CacheSynced: func() bool { return true }, Prom: &stubProm{}}, true},
+		{"unconfigured", Deps{CacheSynced: func() bool { return true }}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			New(tc.deps).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/metrics", nil))
+			require.Equal(t, http.StatusOK, rec.Code)
+
+			var got MetricCatalog
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+			require.Equal(t, tc.want, got.PrometheusConfigured)
+			require.Len(t, got.Sections, 3, "the catalog lists the charts either way")
+		})
+	}
+}
