@@ -45,10 +45,9 @@ spec:
             # value drives the listener, the container port and the probes.
             - name: AGENT_SANDBOX_DASHBOARD_LISTEN_ADDR
               value: {{ .Values.listenPort | quote }}
-            {{- with .Values.prometheus.url }}
+            {{- if .Values.prometheus.url }}
             - name: PROMETHEUS_URL
-              value: {{ . | quote }}
-            {{- end }}
+              value: {{ .Values.prometheus.url | quote }}
             {{- with .Values.prometheus.controllerJob }}
             - name: AGENT_SANDBOX_DASHBOARD_CONTROLLER_JOB
               value: {{ . | quote }}
@@ -56,6 +55,7 @@ spec:
             {{- with .Values.prometheus.timeout }}
             - name: AGENT_SANDBOX_DASHBOARD_METRICS_TIMEOUT
               value: {{ . | quote }}
+            {{- end }}
             {{- end }}
             {{- if .Values.openSandbox.url }}
             - name: OPENSANDBOX_URL

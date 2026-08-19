@@ -141,10 +141,6 @@ spec:
             # value drives the listener, the container port and the probes.
             - name: AGENT_SANDBOX_DASHBOARD_LISTEN_ADDR
               value: "8080"
-            - name: AGENT_SANDBOX_DASHBOARD_CONTROLLER_JOB
-              value: "agent-sandbox-controller"
-            - name: AGENT_SANDBOX_DASHBOARD_METRICS_TIMEOUT
-              value: "10s"
           ports:
             - name: http
               containerPort: 8080
