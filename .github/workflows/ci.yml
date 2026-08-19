@@ -24,6 +24,39 @@ jobs:
       - run: make test
       - run: make build
 
+  chart:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.2
+
+      # A broken template should fail a pull request, not somebody's install.
+      - run: make helm-lint
+
+      # deploy/install.yaml is generated from the chart. If a template changes
+      # and the rendered file is not regenerated, the no-Helm install path
+      # silently ships the old resources — so the two must agree.
+      - name: install.yaml is in sync with the chart
+        run: |
+          make manifests
+          git diff --exit-code deploy/install.yaml || {
+            echo "::error file=deploy/install.yaml::Out of sync with the chart. Run 'make manifests' and commit the result."
+            exit 1
+          }
+
+      # The rendered manifests must satisfy the Kubernetes API schemas, which
+      # helm lint does not check. Pinned download rather than a third-party
+      # action, so the version is ours to choose and the source is upstream.
+      - name: Validate the rendered manifests against the API schemas
+        env:
+          KUBECONFORM_VERSION: v0.6.7
+        run: |
+          curl -sSfL "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" \
+            | tar xz kubeconform
+          ./kubeconform -strict -summary -kubernetes-version 1.31.0 deploy/install.yaml
+
   ui:
     runs-on: ubuntu-latest
     steps:
