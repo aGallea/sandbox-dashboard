@@ -38,6 +38,21 @@ kubectl port-forward -n sandbox-dashboard svc/sandbox-dashboard 8080:80
 open http://localhost:8080
 ```
 
+Both optional integrations are off by default; the dashboard runs without either and each page
+says which one is missing rather than hiding a control or failing. To wire both up, start from the
+worked example — CI renders it on every pull request, so it cannot drift from the chart:
+
+```bash
+helm install sandbox-dashboard oci://ghcr.io/agallea/charts/sandbox-dashboard \
+  -n sandbox-dashboard --create-namespace \
+  -f deploy/helm/sandbox-dashboard/values-example.yaml   # edit the URLs first
+```
+
+| | Off (default) | On |
+|---|---|---|
+| **Prometheus** | The metrics page says so once, with the command to enable it; the overview's reserved-against-used panel points at `PROMETHEUS_URL`. | Ten charts, plus live usage in the overview's meters and footprint bars. |
+| **OpenSandbox** | No OSB State column, no "stale only" filter, no OpenSandbox section in the drawer. `Creator` and `Session` still work — they come from labels. | OSB State with divergence and staleness markers, the stale filter, and OpenSandbox diagnostics in the drawer. |
+
 Every value the chart accepts is documented in
 [`deploy/helm/sandbox-dashboard/README.md`](deploy/helm/sandbox-dashboard/README.md). Users of
 kustomize can treat `deploy/install.yaml` as a base and patch it:

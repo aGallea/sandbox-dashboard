@@ -19,6 +19,20 @@ The role is a **ClusterRole** because the dashboard aggregates across namespaces
 carry the release name, so two installs in one cluster do not fight over the same
 cluster-scoped object.
 
+## What each integration adds
+
+Both are off by default, and the UI never shows a control it cannot answer. Nothing is hidden
+behind a flag you have to know about: install it bare, and each page tells you what a URL would
+add.
+
+| | Off (default) | On |
+|---|---|---|
+| **Prometheus** | The metrics page says so once, with the command to enable it; the overview's reserved-against-used panel points at `PROMETHEUS_URL`; footprint bars show reservations only. | Ten charts across fleet / controller / claims; live usage inset into the footprint bars and the overview meters. |
+| **OpenSandbox** | No OSB State column, no "stale only" filter, no OpenSandbox section in the drawer. `Creator` and `Session` still work — they come from labels, not from the API. | OSB State column with divergence and staleness markers, the stale filter, OpenSandbox diagnostics in the drawer, and OSB state as a grouping dimension once the fleet holds more than one. |
+
+Neither one failing takes the dashboard with it: Prometheus unreachable costs those panels, and
+OpenSandbox unreachable leaves the rows intact with `osb.status: "unreachable"` reported.
+
 ## Turning the integrations on
 
 Both are soft dependencies — the dashboard runs without either and says so in the UI.
@@ -29,6 +43,15 @@ helm upgrade --install sandbox-dashboard oci://ghcr.io/agallea/charts/sandbox-da
   --set prometheus.url=http://prometheus.monitoring.svc:9090 \
   --set openSandbox.url=http://opensandbox-server.default.svc \
   --set openSandbox.existingSecret=opensandbox-server-api-key
+```
+
+[`values-example.yaml`](values-example.yaml) is a fully wired install — both integrations plus an
+authenticated ingress — kept honest by CI, which renders it on every pull request:
+
+```bash
+helm install sandbox-dashboard oci://ghcr.io/agallea/charts/sandbox-dashboard \
+  -n sandbox-dashboard --create-namespace \
+  -f deploy/helm/sandbox-dashboard/values-example.yaml
 ```
 
 `openSandbox.existingSecret` is the recommended path: the key reaches the pod through a

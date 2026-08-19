@@ -45,6 +45,8 @@ helm-lint:
 	  --set openSandbox.url=http://opensandbox-server.default.svc \
 	  --set openSandbox.existingSecret=osb-key \
 	  --set ingress.enabled=true --set listenPort=9090 > /dev/null
+	helm template sandbox-dashboard deploy/helm/sandbox-dashboard \
+	  -f deploy/helm/sandbox-dashboard/values-example.yaml > /dev/null
 
 clean:
 	rm -f $(BINARY)
