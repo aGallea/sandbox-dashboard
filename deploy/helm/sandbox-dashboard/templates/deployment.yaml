@@ -1,0 +1,123 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "sandbox-dashboard.fullname" . }}
+  labels:
+    {{- include "sandbox-dashboard.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "sandbox-dashboard.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "sandbox-dashboard.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- if and .Values.openSandbox.apiKey (not .Values.openSandbox.existingSecret) }}
+        # Rolls the pod when the chart-managed key changes; without this the old
+        # key stays in the running process until something else restarts it.
+        checksum/opensandbox-secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "sandbox-dashboard.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: dashboard
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            # The port comes from the environment rather than args so that one
+            # value drives the listener, the container port and the probes.
+            - name: AGENT_SANDBOX_DASHBOARD_LISTEN_ADDR
+              value: {{ .Values.listenPort | quote }}
+            {{- with .Values.prometheus.url }}
+            - name: PROMETHEUS_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.prometheus.controllerJob }}
+            - name: AGENT_SANDBOX_DASHBOARD_CONTROLLER_JOB
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.prometheus.timeout }}
+            - name: AGENT_SANDBOX_DASHBOARD_METRICS_TIMEOUT
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if .Values.openSandbox.url }}
+            - name: OPENSANDBOX_URL
+              value: {{ .Values.openSandbox.url | quote }}
+            {{- if or .Values.openSandbox.existingSecret .Values.openSandbox.apiKey }}
+            - name: OPENSANDBOX_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "sandbox-dashboard.osbSecretName" . }}
+                  key: {{ .Values.openSandbox.existingSecretKey }}
+            {{- end }}
+            {{- with .Values.openSandbox.ttl }}
+            - name: AGENT_SANDBOX_DASHBOARD_OSB_TTL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.openSandbox.staleAfter }}
+            - name: AGENT_SANDBOX_DASHBOARD_OSB_STALE_AFTER
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.openSandbox.timeout }}
+            - name: AGENT_SANDBOX_DASHBOARD_OSB_TIMEOUT
+              value: {{ . | quote }}
+            {{- end }}
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.listenPort }}
+              protocol: TCP
+          readinessProbe:
+            # /readyz stays 503 until every informer has finished its first sync,
+            # so traffic never reaches a pod that would serve an empty cluster.
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

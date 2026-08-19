@@ -1,0 +1,9 @@
+{{- if and .Values.openSandbox.existingSecret .Values.openSandbox.apiKey }}
+{{- fail "openSandbox: set existingSecret or apiKey, not both — the chart cannot tell which key you meant" }}
+{{- end }}
+{{- if and .Values.openSandbox.apiKey (not .Values.openSandbox.url) }}
+{{- fail "openSandbox.apiKey is set but openSandbox.url is empty, so the integration stays off and the key would sit unused in a Secret" }}
+{{- end }}
+{{- if and (not .Values.serviceAccount.create) (not .Values.serviceAccount.name) }}
+{{- fail "serviceAccount.create=false requires serviceAccount.name — otherwise the pod runs as \"default\", which has no permissions" }}
+{{- end }}

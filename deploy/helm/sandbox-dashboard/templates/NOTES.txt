@@ -1,0 +1,33 @@
+{{ include "sandbox-dashboard.fullname" . }} is installed in namespace {{ .Release.Namespace }}.
+
+Reach it:
+{{- if .Values.ingress.enabled }}
+{{- range .Values.ingress.hosts }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}
+{{- end }}
+{{- else }}
+  kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "sandbox-dashboard.fullname" . }} 8080:{{ .Values.service.port }}
+  open http://localhost:8080
+{{- end }}
+
+Integrations:
+{{ if .Values.prometheus.url }}  Prometheus:  {{ .Values.prometheus.url }} (controller job "{{ .Values.prometheus.controllerJob }}")
+{{- else }}  Prometheus:  not set — the metrics page and the overview's usage panels report 503.
+               Enable with --set prometheus.url=http://prometheus.monitoring.svc:9090
+{{- end }}
+{{ if .Values.openSandbox.url }}  OpenSandbox: {{ .Values.openSandbox.url }}
+{{- if not (or .Values.openSandbox.existingSecret .Values.openSandbox.apiKey) }}
+               WARNING: no API key set. Requests will very likely be rejected.
+               Set openSandbox.existingSecret, or openSandbox.apiKey.
+{{- end }}
+{{- else }}  OpenSandbox: not set — sandbox rows carry no OpenSandbox lifecycle state.
+{{- end }}
+
+{{ if not .Values.rbac.create }}NOTE: rbac.create=false. The pod cannot read any resource unless you have bound
+an equivalent ClusterRole to {{ include "sandbox-dashboard.serviceAccountName" . }} yourself.
+{{ end }}
+{{- if and .Values.ingress.enabled (not .Values.ingress.annotations) }}
+NOTE: the Ingress has no annotations. This dashboard ships no authentication of
+its own, so it is now readable by anyone who can reach that host. See the
+commented oauth2-proxy and basic-auth examples in values.yaml.
+{{- end }}
