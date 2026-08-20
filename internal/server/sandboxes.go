@@ -75,6 +75,15 @@ func handleSandboxList(d Deps) http.HandlerFunc {
 			}
 		}
 
+		// Pods carry what the CR cannot report: scheduling phase, restarts, node
+		// and the reservation actually held. A failure here is never fatal —
+		// same rule as the OpenSandbox join above: degrade the row, serve the
+		// rest. Scoped to nsFilter when set, since rows outside it are dropped.
+		pods, err := podsBySandboxUID(r.Context(), d.Client, nsFilter)
+		if err != nil && d.Logger != nil {
+			d.Logger.Error("pod_list_failed", "err", err.Error())
+		}
+
 		summaries := make([]ResourceSummary, 0, len(list.Items))
 		matched := 0
 		unrecognisedStates := map[string]int{}
@@ -134,6 +143,8 @@ func handleSandboxList(d Deps) http.HandlerFunc {
 				Experiment: experiment,
 				SessionID:  sessionID,
 				Osb:        view,
+				Pod:        podViewFor(pods, item.UID),
+				Labels:     item.Labels,
 			})
 		}
 
@@ -185,6 +196,11 @@ func handleSandboxDetail(d Deps) http.HandlerFunc {
 		creator := creatorFor(sb.Labels)
 		owner, team, experiment, sessionID := identityFor(sb.Labels)
 
+		pods, err := podsBySandboxUID(r.Context(), d.Client, ns)
+		if err != nil && d.Logger != nil {
+			d.Logger.Error("pod_list_failed", "ns", ns, "name", name, "err", err.Error())
+		}
+
 		// An OpenSandbox failure here must not fail the detail response: the CR
 		// data is still worth serving. Mirrors handleSandboxList's fallback.
 		var view *OsbView
@@ -220,6 +236,8 @@ func handleSandboxDetail(d Deps) http.HandlerFunc {
 				Experiment: experiment,
 				SessionID:  sessionID,
 				Osb:        view,
+				Pod:        podViewFor(pods, sb.UID),
+				Labels:     sb.Labels,
 			},
 			Spec:        &sb.Spec,
 			Conditions:  sb.Status.Conditions,

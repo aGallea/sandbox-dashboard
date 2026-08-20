@@ -13,9 +13,11 @@ import (
 	"github.com/aGallea/sandbox-dashboard/internal/prom"
 )
 
-// QueryRanger is the subset of *prom.Client the handler depends on.
-type QueryRanger interface {
+// PromQuerier is the subset of *prom.Client the handlers depend on: ranged
+// queries for the metrics charts, instant queries for the usage rollup.
+type PromQuerier interface {
 	QueryRange(ctx context.Context, query string, r prom.Range) ([]prom.Point, error)
+	Query(ctx context.Context, query string, at time.Time) ([]prom.Sample, error)
 }
 
 // MetricSeries is one line on the chart.

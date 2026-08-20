@@ -43,6 +43,40 @@ func NewClient(baseURL string, opts ...Option) (*Client, error) {
 	return client, nil
 }
 
+// Sample is one instant-vector result: the labels identifying a series and its
+// value at query time.
+type Sample struct {
+	Labels map[string]string
+	Value  float64
+}
+
+// Query runs an instant PromQL query and returns the vector result. Warnings
+// are forwarded to the configured logger, as in QueryRange.
+func (c *Client) Query(ctx context.Context, query string, at time.Time) ([]Sample, error) {
+	val, warns, err := c.api.Query(ctx, query, at)
+	if err != nil {
+		return nil, err
+	}
+	if c.logger != nil {
+		for _, w := range warns {
+			c.logger.Warn("prometheus_warning", "query", query, "message", w)
+		}
+	}
+	vector, ok := val.(model.Vector)
+	if !ok {
+		return nil, fmt.Errorf("expected vector result, got %T", val)
+	}
+	out := make([]Sample, 0, len(vector))
+	for _, s := range vector {
+		labels := make(map[string]string, len(s.Metric))
+		for k, v := range s.Metric {
+			labels[string(k)] = string(v)
+		}
+		out = append(out, Sample{Labels: labels, Value: float64(s.Value)})
+	}
+	return out, nil
+}
+
 // QueryRange runs a PromQL query_range and returns the points from the first
 // series of the matrix result. Warnings emitted by Prometheus are forwarded
 // to the configured logger (if any) at WARN level.
