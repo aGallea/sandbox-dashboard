@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "sandbox-dashboard values",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "replicaCount": { "type": "integer", "minimum": 0 },
+    "listenPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+    "nameOverride": { "type": "string" },
+    "fullnameOverride": { "type": "string" },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "tag": { "type": "string" },
+        "pullPolicy": { "type": "string", "enum": ["Always", "IfNotPresent", "Never"] }
+      }
+    },
+    "imagePullSecrets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "properties": { "name": { "type": "string" } }
+      }
+    },
+    "serviceAccount": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "create": { "type": "boolean" },
+        "name": { "type": "string" },
+        "annotations": { "type": "object" }
+      }
+    },
+    "rbac": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "create": { "type": "boolean" } }
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "string", "enum": ["ClusterIP", "NodePort", "LoadBalancer"] },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "annotations": { "type": "object" }
+      }
+    },
+    "ingress": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "className": { "type": "string" },
+        "annotations": { "type": ["object", "null"] },
+        "hosts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["host"],
+            "properties": {
+              "host": { "type": "string", "minLength": 1 },
+              "paths": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["path", "pathType"],
+                  "properties": {
+                    "path": { "type": "string" },
+                    "pathType": { "type": "string", "enum": ["Prefix", "Exact", "ImplementationSpecific"] }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tls": { "type": "array" }
+      }
+    },
+    "prometheus": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "url": {
+          "type": "string",
+          "description": "Empty disables the integration. Otherwise an http(s) base URL reachable from the pod.",
+          "pattern": "^(|https?://.+)$"
+        },
+        "controllerJob": {
+          "type": "string",
+          "description": "Interpolated into a PromQL label matcher, so it must be a plain label value.",
+          "pattern": "^[a-zA-Z0-9_.:-]*$"
+        },
+        "timeout": { "type": "string", "pattern": "^[0-9]+(ms|s|m)$" }
+      }
+    },
+    "openSandbox": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "url": { "type": "string", "pattern": "^(|https?://.+)$" },
+        "existingSecret": { "type": "string" },
+        "existingSecretKey": { "type": "string", "minLength": 1 },
+        "apiKey": { "type": "string" },
+        "ttl": { "type": "string", "pattern": "^[0-9]+(ms|s|m)$" },
+        "staleAfter": { "type": "string", "pattern": "^[0-9]+(ms|s|m)$" },
+        "timeout": { "type": "string", "pattern": "^[0-9]+(ms|s|m)$" }
+      }
+    },
+    "extraEnv": { "type": "array" },
+    "resources": { "type": "object" },
+    "podSecurityContext": { "type": "object" },
+    "securityContext": { "type": "object" },
+    "podAnnotations": { "type": "object" },
+    "podLabels": { "type": "object" },
+    "nodeSelector": { "type": "object" },
+    "tolerations": { "type": "array" },
+    "affinity": { "type": "object" },
+    "topologySpreadConstraints": { "type": "array" },
+    "priorityClassName": { "type": "string" }
+  }
+}

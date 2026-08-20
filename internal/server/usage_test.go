@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -27,8 +26,6 @@ import (
 // of the query, and records every query it was asked.
 type stubQuerier struct {
 	stubProm
-	mu       sync.Mutex
-	asked    []string
 	cpu      []prom.Sample
 	mem      []prom.Sample
 	queryErr error

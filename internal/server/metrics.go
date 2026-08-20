@@ -26,6 +26,54 @@ type MetricSeries struct {
 	Points []prom.Point `json:"points"`
 }
 
+// MetricInfo describes one chart. It deliberately carries no PromQL: the
+// queries stay server-side, which is the point of the whitelist.
+type MetricInfo struct {
+	Name        string `json:"name"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Unit        string `json:"unit"`
+}
+
+// MetricSection is a group of charts a reader looks at together.
+type MetricSection struct {
+	Name    string       `json:"name"`
+	Note    string       `json:"note,omitempty"`
+	Metrics []MetricInfo `json:"metrics"`
+}
+
+// MetricCatalog is the JSON returned by GET /api/v1/metrics. The page renders
+// itself from this rather than from a list duplicated in the SPA, so adding a
+// chart is a change in one place.
+type MetricCatalog struct {
+	// PrometheusConfigured lets the page say once that the integration is off,
+	// instead of asking for every chart and printing the same 503 ten times.
+	PrometheusConfigured bool            `json:"prometheusConfigured"`
+	Sections             []MetricSection `json:"sections"`
+}
+
+// handleMetricCatalog lists the available charts. It answers without Prometheus:
+// the page should still show its shape, with each chart reporting the
+// unconfigured state itself.
+func handleMetricCatalog(d Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		catalog := MetricCatalog{PrometheusConfigured: d.Prom != nil}
+		for _, s := range d.metrics().Sections() {
+			section := MetricSection{Name: s.Name, Note: s.Note, Metrics: make([]MetricInfo, 0, len(s.Metrics))}
+			for _, m := range s.Metrics {
+				section.Metrics = append(section.Metrics, MetricInfo{
+					Name:        m.Name,
+					Title:       m.Title,
+					Description: m.Description,
+					Unit:        m.Unit,
+				})
+			}
+			catalog.Sections = append(catalog.Sections, section)
+		}
+		writeJSON(w, http.StatusOK, catalog)
+	}
+}
+
 // MetricResponse is the JSON returned by /api/v1/metrics/{name}.
 type MetricResponse struct {
 	Name        string         `json:"name"`
@@ -47,7 +95,7 @@ func handleMetric(d Deps) http.HandlerFunc {
 			return
 		}
 		name := chi.URLParam(r, "name")
-		metric, ok := prom.Lookup(name)
+		metric, ok := d.metrics().Lookup(name)
 		if !ok {
 			writeProblem(w, d.Logger, problemArgs{
 				Status: http.StatusNotFound, Type: "metric-not-found",

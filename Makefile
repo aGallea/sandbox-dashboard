@@ -1,4 +1,4 @@
-.PHONY: all build test lint run ui-install ui-build clean
+.PHONY: all build test lint run ui-install ui-build clean manifests helm-lint
 
 GO := go
 BINARY := dashboard
@@ -27,6 +27,26 @@ ui-install:
 
 ui-build: ui-install
 	cd ui && npm run build
+
+# The chart is the source of truth; deploy/install.yaml is its rendered form for
+# people who would rather not install Helm. CI fails if the two disagree.
+manifests:
+	@CHART_VERSION=$$(grep '^version:' deploy/helm/sandbox-dashboard/Chart.yaml | awk '{print $$2}'); \
+	{ \
+	  sed -e "s/@CHART_VERSION@/$$CHART_VERSION/" deploy/install.yaml.header; \
+	  helm template sandbox-dashboard deploy/helm/sandbox-dashboard --namespace default; \
+	} > deploy/install.yaml
+
+helm-lint:
+	helm lint deploy/helm/sandbox-dashboard
+	helm template sandbox-dashboard deploy/helm/sandbox-dashboard > /dev/null
+	helm template sandbox-dashboard deploy/helm/sandbox-dashboard \
+	  --set prometheus.url=http://prometheus.monitoring.svc:9090 \
+	  --set openSandbox.url=http://opensandbox-server.default.svc \
+	  --set openSandbox.existingSecret=osb-key \
+	  --set ingress.enabled=true --set listenPort=9090 > /dev/null
+	helm template sandbox-dashboard deploy/helm/sandbox-dashboard \
+	  -f deploy/helm/sandbox-dashboard/values-example.yaml > /dev/null
 
 clean:
 	rm -f $(BINARY)

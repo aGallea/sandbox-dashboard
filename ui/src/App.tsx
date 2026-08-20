@@ -12,7 +12,7 @@ const MetricsPage = lazy(() =>
 export function App() {
   return (
     <div className="min-h-screen">
-      <header className="bg-slate-900 text-white px-6 py-3 flex items-baseline gap-6">
+      <header className="flex flex-wrap items-baseline gap-x-6 gap-y-2 bg-slate-900 px-6 py-3 text-white">
         <Link to="/" className="font-bold">
           sandbox-dashboard
         </Link>

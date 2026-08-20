@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -29,12 +30,18 @@ func main() {
 	var listenAddr string
 	// Note: the "kubeconfig" flag is already registered by the init() in
 	// sigs.k8s.io/controller-runtime/pkg/client/config — do not re-register it.
-	flag.StringVar(&listenAddr, "listen-addr", ":8080", "HTTP bind address")
+	//
+	// The default is empty rather than ":8080" so a flag can be told apart from
+	// an unset one, which is what lets AGENT_SANDBOX_DASHBOARD_LISTEN_ADDR act
+	// as a fallback instead of being shadowed.
+	flag.StringVar(&listenAddr, "listen-addr", "", "HTTP bind address (default \":8080\"; or AGENT_SANDBOX_DASHBOARD_LISTEN_ADDR)")
 	var promURL string
 	flag.StringVar(&promURL, "prometheus-url", "", "Optional Prometheus base URL (e.g. http://prometheus.monitoring.svc:9090). If empty, /api/v1/metrics/* returns 503.")
 	var osbURL string
 	flag.StringVar(&osbURL, "opensandbox-url", "", "Optional OpenSandbox base URL (e.g. http://opensandbox-server.default.svc). If empty, sandbox rows carry no OpenSandbox state.")
 	flag.Parse()
+
+	listenAddr = resolveListenAddr(listenAddr, os.Getenv("AGENT_SANDBOX_DASHBOARD_LISTEN_ADDR"))
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	ctrl.SetLogger(slogToLogr(logger))
@@ -123,6 +130,7 @@ func main() {
 	}
 	deps := server.Deps{
 		Client:        mgr.GetClient(),
+		Metrics:       prom.NewRegistry(envOr("AGENT_SANDBOX_DASHBOARD_CONTROLLER_JOB", prom.DefaultControllerJob)),
 		CacheSynced:   cacheSynced.Load,
 		UIAssets:      assets,
 		Logger:        logger,
@@ -195,6 +203,34 @@ func (a osbAdapter) Diagnostics(ctx context.Context, id string) (osb.Diagnostics
 
 // durationFromEnv reads a Go duration string (e.g. "10s") from the environment,
 // returning def when unset or invalid.
+// DefaultListenAddr is the address the server binds when nothing says otherwise.
+const DefaultListenAddr = ":8080"
+
+// resolveListenAddr picks the bind address: the flag if given, else the
+// environment, else the default. A bare port is accepted, since a Helm value or
+// a container port reads as a number more naturally than as ":8080".
+func resolveListenAddr(flagValue, envValue string) string {
+	addr := flagValue
+	if addr == "" {
+		addr = envValue
+	}
+	if addr == "" {
+		return DefaultListenAddr
+	}
+	if !strings.Contains(addr, ":") {
+		return ":" + addr
+	}
+	return addr
+}
+
+// envOr returns the environment value for key, or def when unset or empty.
+func envOr(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+
 func durationFromEnv(key string, def time.Duration) time.Duration {
 	v, ok := os.LookupEnv(key)
 	if !ok {

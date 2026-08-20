@@ -50,3 +50,42 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  chart:
+    runs-on: ubuntu-latest
+    # The chart's default image tag is the appVersion, so publishing it before
+    # the image exists would hand users a chart that cannot pull.
+    needs: image
+    permissions:
+      contents: write   # attach install.yaml to the release
+      packages: write   # push the chart to ghcr
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.2
+
+      - name: Tag, chart version and appVersion must agree
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          CHART=$(grep '^version:' deploy/helm/sandbox-dashboard/Chart.yaml | awk '{print $2}')
+          APP=$(grep '^appVersion:' deploy/helm/sandbox-dashboard/Chart.yaml | awk '{print $2}' | tr -d '"')
+          echo "tag=$TAG chart=$CHART appVersion=$APP"
+          if [ "$TAG" != "$CHART" ] || [ "$TAG" != "$APP" ]; then
+            echo "::error::Tag $TAG, chart version $CHART and appVersion $APP must match before release."
+            exit 1
+          fi
+
+      - name: Package and push the chart
+        run: |
+          helm package deploy/helm/sandbox-dashboard --destination dist
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io \
+            --username ${{ github.actor }} --password-stdin
+          helm push dist/sandbox-dashboard-*.tgz oci://ghcr.io/${{ github.repository_owner }}/charts
+
+      - name: Attach install.yaml and the chart to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            deploy/install.yaml
+            dist/sandbox-dashboard-*.tgz

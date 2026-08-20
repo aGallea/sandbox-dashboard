@@ -71,6 +71,20 @@ export interface SandboxOsbDetail {
   events: string;
 }
 
+/** Pod-derived state for a sandbox: absent when the sandbox has no pod. */
+export interface PodView {
+  name: string;
+  phase: string;
+  node?: string;
+  image?: string;
+  restarts: number;
+  waitingReason?: string;
+  /** Requests summed over the pod's containers — what the cluster reserved. */
+  cpuMillis: number;
+  memBytes: number;
+  gpu: number;
+}
+
 export interface ResourceSummary {
   name: string;
   namespace: string;
@@ -84,6 +98,9 @@ export interface ResourceSummary {
   experiment?: string;
   sessionId?: string;
   osb?: OsbView;
+  pod?: PodView;
+  /** Sandbox labels verbatim; the overview derives its grouping dimensions from them. */
+  labels?: Record<string, string>;
 }
 
 export interface ListResponse {
@@ -185,6 +202,26 @@ export async function fetchSandboxOsb(
   return res.json();
 }
 
+// ----- live usage ----------------------------------------------------------
+
+export interface PodUsage {
+  cpuCores: number;
+  memBytes: number;
+}
+
+export interface UsageResponse {
+  sampledAt: string;
+  /** Keyed "namespace/pod", matching `${it.namespace}/${it.pod.name}` on a sandbox row. */
+  pods: Record<string, PodUsage>;
+}
+
+export async function fetchUsage(): Promise<UsageResponse> {
+  const res = await fetch('/api/v1/usage');
+  if (res.status === 503) throw new Error('prometheus-unconfigured');
+  if (!res.ok) throw new Error(`usage failed: ${res.status}`);
+  return res.json();
+}
+
 // ----- metrics types -------------------------------------------------------
 
 export type MetricRange = '15m' | '1h' | '6h' | '24h';
@@ -206,6 +243,32 @@ export interface MetricResponse {
   unit: string;
   range: MetricRange;
   series: MetricSeries[];
+}
+
+export interface MetricInfo {
+  name: string;
+  title: string;
+  description: string;
+  unit: string;
+}
+
+export interface MetricSection {
+  name: string;
+  note?: string;
+  metrics: MetricInfo[];
+}
+
+export interface MetricCatalog {
+  /** False when the install has no Prometheus: the page says so once. */
+  prometheusConfigured: boolean;
+  sections: MetricSection[];
+}
+
+/** The charts this install offers, grouped for display. Served without Prometheus. */
+export async function fetchMetricCatalog(): Promise<MetricCatalog> {
+  const res = await fetch('/api/v1/metrics');
+  if (!res.ok) throw new Error(`metric catalog failed: ${res.status}`);
+  return res.json();
 }
 
 export async function fetchMetric(name: string, range: MetricRange = '1h'): Promise<MetricResponse> {

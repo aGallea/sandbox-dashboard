@@ -1,0 +1,18 @@
+# GENERATED FILE — DO NOT EDIT.
+#
+# Rendered from deploy/helm/sandbox-dashboard (chart @CHART_VERSION@) with default
+# values, into the "default" namespace. Regenerate with:
+#
+#     make manifests
+#
+# This is the no-Helm install path:
+#
+#     kubectl apply -f https://raw.githubusercontent.com/aGallea/sandbox-dashboard/main/deploy/install.yaml
+#
+# It deploys with both optional integrations off: the metrics page and the
+# overview's usage panels report that Prometheus is unconfigured, and sandbox
+# rows carry no OpenSandbox state. To turn either on, use the chart, or patch
+# this file with kustomize:
+#
+#     resources: [install.yaml]
+#     patches: [...]

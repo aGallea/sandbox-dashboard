@@ -1,0 +1,132 @@
+# Default values for sandbox-dashboard.
+# Every value below is what you get if you set nothing.
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/agallea/sandbox-dashboard
+  # Defaults to the chart's appVersion. Pin a digest or tag for production.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+# Needed only while the GHCR package is private.
+imagePullSecrets: []
+#  - name: ghcr-pull
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  # Defaults to the release's full name.
+  name: ""
+  annotations: {}
+
+rbac:
+  # The dashboard reads Sandboxes, claims, templates, warm pools, pods and events
+  # across the cluster, so its role is a ClusterRole. Disable only if you manage
+  # the role yourself; without it the pod cannot serve any resource endpoint.
+  create: true
+
+service:
+  type: ClusterIP
+  port: 80
+  annotations: {}
+
+# The port the container listens on. One value drives the container port, the
+# probes and the address the binary binds, so they cannot disagree.
+listenPort: 8080
+
+ingress:
+  # The dashboard has no built-in authentication on purpose — it is read-only and
+  # expects to sit behind whatever your cluster already uses. Do not expose it
+  # publicly without one of the annotation sets below.
+  enabled: false
+  className: ""
+  annotations: {}
+    # oauth2-proxy in front of nginx-ingress:
+    # nginx.ingress.kubernetes.io/auth-url: "https://oauth2-proxy.example.com/oauth2/auth"
+    # nginx.ingress.kubernetes.io/auth-signin: "https://oauth2-proxy.example.com/oauth2/start?rd=$escaped_request_uri"
+    #
+    # Basic auth from a Secret, for a quick internal deployment:
+    # nginx.ingress.kubernetes.io/auth-type: basic
+    # nginx.ingress.kubernetes.io/auth-secret: sandbox-dashboard-basic-auth
+    #
+    # GCP with Identity-Aware Proxy:
+    # kubernetes.io/ingress.class: gce
+  hosts:
+    - host: sandbox-dashboard.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  #  - secretName: sandbox-dashboard-tls
+  #    hosts:
+  #      - sandbox-dashboard.local
+
+# Optional: Prometheus, for the metrics page and the overview's usage panels.
+# Without it those return 503 and the UI says so; nothing else is affected.
+prometheus:
+  url: ""
+  # Prometheus job label of the agent-sandbox controller. The controller_runtime_*
+  # metric names are shared by every controller-runtime binary in the cluster, so
+  # this is what separates its numbers from everyone else's.
+  controllerJob: agent-sandbox-controller
+  # Bounds a single range query.
+  timeout: 10s
+
+# Optional: OpenSandbox, for its own lifecycle state beside the Ready condition.
+# Without it sandbox rows simply carry no OpenSandbox fields.
+openSandbox:
+  url: ""
+  # Reference a Secret you already have (recommended) — the key is never passed
+  # as an argument, so it stays out of `kubectl describe`.
+  existingSecret: ""
+  existingSecretKey: api-key
+  # Or set the key here and let the chart create the Secret. Anything you put in
+  # values ends up in the release, so prefer existingSecret in production.
+  apiKey: ""
+  # How long the inventory is cached before another fetch.
+  ttl: 5s
+  # How long a transient OpenSandbox state may sit before it is reported stale.
+  staleAfter: 60s
+  # Bounds a single inventory fetch.
+  timeout: 5s
+
+# Anything the chart does not model. Standard env entries, appended last.
+extraEnv: []
+#  - name: HTTPS_PROXY
+#    value: http://proxy.internal:3128
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+# The image runs as nonroot with a read-only root filesystem; these are the
+# settings that keep it that way under a restricted Pod Security Standard.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+podAnnotations: {}
+podLabels: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+topologySpreadConstraints: []
+priorityClassName: ""

@@ -1,0 +1,61 @@
+# A fully wired install: both integrations on, behind an authenticated ingress.
+#
+#     helm install sandbox-dashboard oci://ghcr.io/agallea/charts/sandbox-dashboard \
+#       -n sandbox-dashboard --create-namespace \
+#       -f values-example.yaml
+#
+# Everything here is optional. With none of it the dashboard still runs, and each
+# page reports which integration is missing — see "What each integration adds" in
+# the chart README.
+
+# --- Prometheus: the metrics page, and the overview's reserved-against-used panels.
+prometheus:
+  # Reachable from the pod. Adjust the service and namespace to your stack —
+  # kube-prometheus-stack usually lands on one of these:
+  #   http://prometheus-operated.monitoring.svc:9090
+  #   http://prom-stack-prometheus.monitoring.svc:9090
+  url: http://prometheus.monitoring.svc:9090
+
+  # The Prometheus `job` label of the agent-sandbox controller. controller_runtime_*
+  # is exported by every controller-runtime binary in the cluster, so this is what
+  # keeps the controller charts from summing unrelated controllers.
+  controllerJob: agent-sandbox-controller
+
+# --- OpenSandbox: its own lifecycle state beside the Kubernetes Ready condition.
+openSandbox:
+  url: http://opensandbox-server.default.svc
+
+  # Prefer a Secret you already have: the key reaches the pod through a
+  # secretKeyRef and never appears in the release or in `kubectl describe`.
+  existingSecret: opensandbox-server-api-key
+  existingSecretKey: api-key
+
+  # Report a transient OpenSandbox state as stale once it has sat this long.
+  staleAfter: 60s
+
+# --- Exposure. The dashboard has no authentication of its own, so the annotations
+# are what stand between it and anyone who can reach the host.
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/auth-url: "https://oauth2-proxy.example.com/oauth2/auth"
+    nginx.ingress.kubernetes.io/auth-signin: "https://oauth2-proxy.example.com/oauth2/start?rd=$escaped_request_uri"
+  hosts:
+    - host: sandbox-dashboard.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: sandbox-dashboard-tls
+      hosts:
+        - sandbox-dashboard.example.com
+
+# --- A larger fleet keeps more objects in the informer cache.
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi

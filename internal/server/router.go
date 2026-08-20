@@ -14,6 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/aGallea/sandbox-dashboard/internal/osb"
+	"github.com/aGallea/sandbox-dashboard/internal/prom"
 )
 
 // Deps is the set of collaborators the router needs. Tests can swap any of them.
@@ -29,6 +30,9 @@ type Deps struct {
 	// Prom is the optional Prometheus query client. If nil, /api/v1/metrics/*
 	// and /api/v1/usage return 503.
 	Prom PromQuerier
+	// Metrics is the whitelisted metric registry. If nil, a registry for the
+	// default controller scrape job is used.
+	Metrics *prom.Registry
 	// Osb is the optional OpenSandbox client. If nil, sandbox rows carry no
 	// OpenSandbox state and the list response omits its osb block.
 	Osb OsbClient
@@ -47,6 +51,15 @@ type Deps struct {
 type OsbClient interface {
 	ListSandboxes(ctx context.Context) (map[string]osb.Sandbox, error)
 	Diagnostics(ctx context.Context, id string) (osb.Diagnostics, error)
+}
+
+// metrics returns the configured registry, defaulting to one scoped to the
+// upstream controller job name.
+func (d Deps) metrics() *prom.Registry {
+	if d.Metrics == nil {
+		return prom.NewRegistry(prom.DefaultControllerJob)
+	}
+	return d.Metrics
 }
 
 // now returns the Deps clock, defaulting to time.Now.
@@ -99,6 +112,7 @@ func New(d Deps) http.Handler {
 	// independent of the informer cache, and the metrics page should remain
 	// usable during dashboard startup.
 	r.Route("/api/v1/metrics", func(mr chi.Router) {
+		mr.Get("/", handleMetricCatalog(d))
 		mr.Get("/{name}", handleMetric(d))
 	})
 
