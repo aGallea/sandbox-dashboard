@@ -252,7 +252,7 @@ Both integrations are *soft dependencies*, and the failure boundaries are delibe
 
 ## Status
 
-`v0.1.0` — first general-availability release.
+`v0.4.0`. The chart version and `appVersion` track the git tag, so `v0.4.0` publishes chart 0.4.0 pointing at image 0.4.0.
 
 ## License
 
