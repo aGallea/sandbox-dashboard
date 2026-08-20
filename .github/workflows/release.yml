@@ -32,12 +32,12 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/aGallea/sandbox-dashboard
+          images: ghcr.io/agallea/sandbox-dashboard
           tags: |
             type=ref,event=tag
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
 
       - name: Build and push
         uses: docker/build-push-action@v5
@@ -78,10 +78,15 @@ jobs:
 
       - name: Package and push the chart
         run: |
+          # An OCI reference must be lowercase and github.repository_owner is not
+          # guaranteed to be: helm push rejects "aGallea/charts" as an invalid
+          # reference. The image escapes this only because metadata-action
+          # lowercases on its own.
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           helm package deploy/helm/sandbox-dashboard --destination dist
           echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io \
             --username ${{ github.actor }} --password-stdin
-          helm push dist/sandbox-dashboard-*.tgz oci://ghcr.io/${{ github.repository_owner }}/charts
+          helm push dist/sandbox-dashboard-*.tgz "oci://ghcr.io/$OWNER/charts"
 
       - name: Attach install.yaml and the chart to the release
         uses: softprops/action-gh-release@v2
