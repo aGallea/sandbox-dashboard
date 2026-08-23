@@ -17,7 +17,6 @@ The 0.4.0 entry below predates that and is hand-written.
 
 ### Bug Fixes
 
-* **deps:** patch the vulnerable dependencies that ship in the image ([52aa9cb](https://github.com/aGallea/sandbox-dashboard/commit/52aa9cb95ac343eb6208aabf0cd10c7eb2d3200a))
 * **deps:** patch the vulnerable dependencies that ship in the image ([f7dd5d2](https://github.com/aGallea/sandbox-dashboard/commit/f7dd5d2e5b865b01504fee988b682533332420ac))
 
 ## [0.4.0] - 2026-08-20
