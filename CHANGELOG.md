@@ -12,6 +12,13 @@ The 0.4.0 entry below predates that and is hand-written.
 
 ---
 
+## [0.4.1](https://github.com/aGallea/sandbox-dashboard/compare/v0.4.0...v0.4.1) (2026-08-23)
+
+
+### Bug Fixes
+
+* **deps:** patch the vulnerable dependencies that ship in the image ([f7dd5d2](https://github.com/aGallea/sandbox-dashboard/commit/f7dd5d2e5b865b01504fee988b682533332420ac))
+
 ## [0.4.0] - 2026-08-20
 
 First published release. Earlier tags (`v0.1.0-alpha.1` … `v0.3.0`) predate the release
