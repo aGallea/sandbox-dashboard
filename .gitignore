@@ -7,8 +7,10 @@
 node_modules/
 ui/dist/
 
-# Editor
+# Editor / agent tooling
 .vscode/
+.claude/
+.playwright-mcp/
 .idea/
 *.swp
 .DS_Store
