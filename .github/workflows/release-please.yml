@@ -16,14 +16,47 @@ jobs:
       # GITHUB_TOKEN does not start a new workflow run, so release.yml would
       # never fire and a release would publish nothing — silently, with a green
       # tick. Fail here instead, where the cause is obvious.
-      - name: RELEASE_TOKEN must be set
+      #
+      # Checking the token is non-empty is not enough: a token that cannot see
+      # this repository fails inside the action as a bare
+      # "Not Found - .../repos#get-a-repository", which says nothing about why.
+      # Probing the repo and the two permissions it needs turns that into an
+      # error naming the actual misconfiguration.
+      - name: RELEASE_TOKEN must be set and able to reach this repo
         env:
           TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          REPO: ${{ github.repository }}
         run: |
           if [ -z "$TOKEN" ]; then
-            echo "::error::RELEASE_TOKEN is not set. Create a PAT with contents:write and pull-requests:write and add it as a repository secret, or release.yml will never run and no image or chart will be published."
+            echo "::error::RELEASE_TOKEN is not set. Create a PAT and add it as a repository secret, or release.yml will never run and no image or chart will be published."
             exit 1
           fi
+
+          code=$(curl -sS -o /tmp/repo.json -w '%{http_code}' \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$REPO")
+
+          if [ "$code" = "401" ]; then
+            echo "::error::RELEASE_TOKEN is invalid or expired (HTTP 401). Regenerate it and update the secret."
+            exit 1
+          fi
+
+          if [ "$code" != "200" ]; then
+            echo "::error::RELEASE_TOKEN cannot see $REPO (HTTP $code). This repo is private, so a fine-grained PAT must list it under Repository access, and a classic PAT needs the full 'repo' scope — 'public_repo' alone returns 404."
+            exit 1
+          fi
+
+          # push means contents:write; the API exposes no separate PR permission
+          # flag, so contents:write plus a successful read is the closest
+          # pre-flight available. A missing pull-requests:write surfaces later,
+          # when the action tries to open the release PR.
+          if [ "$(jq -r '.permissions.push' /tmp/repo.json)" != "true" ]; then
+            echo "::error::RELEASE_TOKEN can read $REPO but has no write access. It needs Contents: read and write, plus Pull requests: read and write."
+            exit 1
+          fi
+
+          echo "RELEASE_TOKEN reaches $REPO with write access."
 
       - uses: googleapis/release-please-action@v4
         id: release
