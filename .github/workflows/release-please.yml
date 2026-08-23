@@ -1,0 +1,56 @@
+name: release-please
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      # release-please must tag with a PAT, not GITHUB_TOKEN. A tag pushed by
+      # GITHUB_TOKEN does not start a new workflow run, so release.yml would
+      # never fire and a release would publish nothing — silently, with a green
+      # tick. Fail here instead, where the cause is obvious.
+      - name: RELEASE_TOKEN must be set
+        env:
+          TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::RELEASE_TOKEN is not set. Create a PAT with contents:write and pull-requests:write and add it as a repository secret, or release.yml will never run and no image or chart will be published."
+            exit 1
+          fi
+
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      # deploy/install.yaml is rendered from the chart and carries the chart
+      # version in its header, so release-please bumping Chart.yaml leaves the
+      # two disagreeing — which is exactly what the ci.yml in-sync check fails
+      # on. Regenerate it on the release PR so that check passes.
+      - uses: actions/checkout@v4
+        if: ${{ steps.release.outputs.pr }}
+        with:
+          ref: ${{ fromJson(steps.release.outputs.pr).headBranchName }}
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - uses: azure/setup-helm@v4
+        if: ${{ steps.release.outputs.pr }}
+        with:
+          version: v3.16.2
+
+      - name: Regenerate install.yaml for the bumped chart version
+        if: ${{ steps.release.outputs.pr }}
+        run: |
+          make manifests
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add deploy/install.yaml
+          git diff --cached --quiet || git commit -m "chore: regenerate install.yaml for the version bump"
+          git push

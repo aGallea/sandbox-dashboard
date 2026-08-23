@@ -1,4 +1,4 @@
-.PHONY: all build test lint run ui-install ui-build clean manifests helm-lint
+.PHONY: all build test lint run ui-install ui-build ui-test clean manifests helm-lint
 
 GO := go
 BINARY := dashboard
@@ -27,6 +27,10 @@ ui-install:
 
 ui-build: ui-install
 	cd ui && npm run build
+
+ui-test: ui-install
+	cd ui && npm test
+	cd ui && npm run lint
 
 # The chart is the source of truth; deploy/install.yaml is its rendered form for
 # people who would rather not install Helm. CI fails if the two disagree.

@@ -4,7 +4,6 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
 
 jobs:
   go:
@@ -67,4 +66,6 @@ jobs:
           cache: 'npm'
           cache-dependency-path: ui/package-lock.json
       - run: cd ui && npm ci
+      - run: cd ui && npm test
+      - run: cd ui && npm run lint
       - run: cd ui && npm run build

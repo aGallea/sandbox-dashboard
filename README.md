@@ -1,6 +1,41 @@
-# sandbox-dashboard
+<h1 align="center">sandbox-dashboard</h1>
 
-Read-only operational dashboard for [kubernetes-sigs/agent-sandbox](https://github.com/kubernetes-sigs/agent-sandbox).
+<p align="center">
+  <strong>Read-only operational dashboard for <a href="https://github.com/kubernetes-sigs/agent-sandbox">kubernetes-sigs/agent-sandbox</a></strong>
+</p>
+
+<p align="center">
+  <a href="#readme">
+    <img src="https://img.shields.io/badge/README-blue?style=for-the-badge" alt="README" />
+  </a>
+  <a href="deploy/helm/sandbox-dashboard/README.md">
+    <img src="https://img.shields.io/badge/HELM_CHART-555?style=for-the-badge" alt="Helm chart" />
+  </a>
+  <a href="CONTRIBUTING.md">
+    <img src="https://img.shields.io/badge/CONTRIBUTING-555?style=for-the-badge" alt="Contributing" />
+  </a>
+  <a href="CHANGELOG.md">
+    <img src="https://img.shields.io/badge/CHANGELOG-555?style=for-the-badge" alt="Changelog" />
+  </a>
+</p>
+
+<div align="center">
+  <a href="https://github.com/aGallea/sandbox-dashboard/actions/workflows/ci.yml">
+    <img src="https://github.com/aGallea/sandbox-dashboard/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" />
+  </a>
+  <a href="LICENSE">
+    <img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License: Apache-2.0" />
+  </a>
+  <a href="https://github.com/aGallea/sandbox-dashboard/releases/latest">
+    <img src="https://img.shields.io/github/v/release/aGallea/sandbox-dashboard" alt="Latest Release" />
+  </a>
+  <a href="https://go.dev/">
+    <img src="https://img.shields.io/badge/Go-1.26%2B-00ADD8.svg" alt="Go 1.26+" />
+  </a>
+  <img src="https://img.shields.io/badge/Kubernetes-1.31%2B-326CE5" alt="Kubernetes 1.31+" />
+</div>
+
+---
 
 It answers the two questions a cluster owner actually has about a sandbox fleet: **is anything
 wrong**, and **is the fleet worth what it reserves**. One Go binary with the SPA embedded, no
@@ -210,8 +245,9 @@ helm upgrade --install sandbox-dashboard oci://ghcr.io/agallea/charts/sandbox-da
 ## Development
 
 ```bash
-make test              # unit tests, race detector on
+make test              # Go unit tests, race detector on
 make lint              # go vet + gofmt over cmd/ and internal/
+make ui-test           # UI unit tests (vitest) + eslint
 make test-integration  # envtest (needs setup-envtest on PATH)
 make helm-lint         # helm lint + render the chart under several value sets
 make manifests         # regenerate deploy/install.yaml from the chart
@@ -254,6 +290,14 @@ Both integrations are *soft dependencies*, and the failure boundaries are delibe
 
 `v0.4.0`. The chart version and `appVersion` track the git tag, so `v0.4.0` publishes chart 0.4.0 pointing at image 0.4.0.
 
+## Contributing
+
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the dev setup, the test
+and lint commands, and how to work on the Helm chart. Please read the
+[Code of Conduct](CODE_OF_CONDUCT.md) before opening an issue or a PR.
+
+Security issues go to the address in [SECURITY.md](SECURITY.md), not to a public issue.
+
 ## License
 
-Apache-2.0
+Apache-2.0 — see [LICENSE](LICENSE).
