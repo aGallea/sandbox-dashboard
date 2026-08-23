@@ -1,0 +1,71 @@
+# Changelog
+
+All notable changes to sandbox-dashboard will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+---
+
+## [Unreleased]
+
+### Added
+
+- `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, and issue / pull request templates.
+- Unit tests for the overview rollups (`vitest`), run in CI alongside the UI lint and build.
+  `make ui-test` runs them locally.
+
+### Changed
+
+- CI now runs on every pull request, not only those already based on `main`. A stacked PR used
+  to get no checks at all until GitHub retargeted it.
+
+## [0.4.0] - 2026-08-20
+
+First published release. Earlier tags (`v0.1.0-alpha.1` … `v0.3.0`) predate the release
+workflow and published no artifacts; their version numbers are not chronological.
+
+### Added
+
+- **Helm chart** (`oci://ghcr.io/agallea/charts/sandbox-dashboard`) as the documented install
+  path, with a JSON schema over the values so a typo fails at install time rather than at
+  runtime. `deploy/install.yaml` is generated from the chart for installs without Helm, and CI
+  fails if the two disagree.
+- **Fleet overview.** Rollups over the sandbox list the page already fetches: state and pod
+  phase breakdowns, grouping along any sandbox label, age buckets, longest-running sandboxes,
+  reserved-versus-used totals, and a triage list that shows only what is non-zero.
+- **Sandbox list** with sorting, filtering, pagination, and a resizable detail drawer.
+- **Pod join.** Each sandbox row carries its pod's phase, node, image, restart count, waiting
+  reason, and CPU / memory / GPU reservations.
+- **Live usage** per sandbox pod, from Prometheus, on `/api/v1/usage` — deliberately outside
+  the sandbox list, so a Prometheus outage costs one panel rather than the whole page. Queries
+  are scoped to the namespaces sandboxes actually live in.
+- **Metrics page** driven by the series the fleet actually has, replacing a hardcoded metric
+  whitelist. Charts are grouped into sections and say so when they are empty.
+- **OpenSandbox integration** (optional): lifecycle state joined onto each sandbox row beside
+  the Kubernetes Ready condition, divergence and staleness flags, per-sandbox diagnostics in
+  the drawer, and an agreement table for state versus CR phase. Failures degrade rows rather
+  than requests — the list returns 200 with `osb.status: "unreachable"`.
+- **Identity fields** derived from CR labels: creator, owner, team, experiment, and session ID.
+- `AGENT_SANDBOX_DASHBOARD_LISTEN_ADDR` as a fallback for `--listen-addr`.
+
+### Changed
+
+- Renamed from `agent-sandbox-dashboard` to `sandbox-dashboard`. The superseded image
+  `ghcr.io/agallea/agent-sandbox-dashboard` receives no further releases.
+- Controls whose integration is unconfigured are no longer rendered at all, rather than
+  rendered and failing. Prometheus tuning variables are emitted only when Prometheus is
+  configured.
+
+### Fixed
+
+- The release workflow now publishes a chart and an image that are actually usable, with the
+  chart version and `appVersion` tracking the git tag.
+- Non-finite Prometheus samples are dropped rather than charted: a `histogram_quantile` over a
+  window with no observations is NaN, which is not a reading and cannot be encoded as JSON.
+- The OpenSandbox fetch is bounded by a timeout, no longer polls when it cannot succeed, and
+  returns a defensive copy from its TTL cache.
+- `?range=` is validated against the whitelist before a metrics request is issued.
+
+[Unreleased]: https://github.com/aGallea/sandbox-dashboard/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/aGallea/sandbox-dashboard/releases/tag/v0.4.0
