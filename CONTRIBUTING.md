@@ -10,6 +10,7 @@ Thank you for your interest in contributing! This document explains how to get t
 - [Code Style](#code-style)
 - [Working on the Chart](#working-on-the-chart)
 - [PR Process](#pr-process)
+- [Releases](#releases)
 
 ---
 
@@ -251,3 +252,36 @@ later PRs in each other rather than in `main` — and they all report success ei
 
 Keep PRs small and focused — under ~400 changed lines where possible. Unrelated changes
 belong in separate PRs, however small.
+
+---
+
+## Releases
+
+Releases are automated by [release-please](https://github.com/googleapis/release-please).
+Nobody tags by hand, and **nobody edits `CHANGELOG.md` or the version fields in `Chart.yaml`** —
+release-please owns all three.
+
+How it works:
+
+1. Conventional commits land on `main`.
+2. `release-please.yml` opens (or updates) a release PR that bumps `version` and `appVersion` in
+   `deploy/helm/sandbox-dashboard/Chart.yaml`, regenerates `deploy/install.yaml` to match, and
+   writes the `CHANGELOG.md` entry from the commit messages.
+3. Merging that PR tags `vX.Y.Z`, which triggers `release.yml` to publish the image and the
+   chart to GHCR and attach `install.yaml` to the GitHub release.
+
+Only `feat` and `fix` commits trigger a release. `docs`, `test`, `ci`, `refactor` and `chore`
+land on `main` without opening a release PR and are hidden from the changelog. If a change
+should ship, give it a type that says so — a dependency bump closing a vulnerability is a `fix`,
+not a `chore`.
+
+While the version is below 1.0.0, `feat` bumps the minor and a breaking change bumps the minor
+too rather than the major (`bump-minor-pre-major`).
+
+### Setup this depends on
+
+`release-please.yml` needs a `RELEASE_TOKEN` repository secret — a PAT with `contents:write` and
+`pull-requests:write`. This is not optional: a tag pushed by the default `GITHUB_TOKEN` does not
+start a new workflow run, so `release.yml` would never fire and the release would publish
+nothing while still going green. The workflow fails on a missing token rather than letting that
+happen quietly.
