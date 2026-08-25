@@ -50,10 +50,10 @@ this reads its CRDs, it does not create them.
 
 ```bash
 helm install sandbox-dashboard oci://ghcr.io/agallea/charts/sandbox-dashboard \
-  --namespace sandbox-dashboard --create-namespace
+  --namespace default
 ```
 
-**Plain YAML**, no Helm — generated from the same chart, deploys into `default`:
+**Plain YAML**, no Helm — generated from the same chart, same namespace:
 
 ```bash
 kubectl apply -f https://raw.githubusercontent.com/aGallea/sandbox-dashboard/main/deploy/install.yaml
@@ -69,7 +69,7 @@ docker run --rm -p 8080:8080 -v ~/.kube/config:/kubeconfig:ro \
 Then:
 
 ```bash
-kubectl port-forward -n sandbox-dashboard svc/sandbox-dashboard 8080:80
+kubectl port-forward -n default svc/sandbox-dashboard 8080:80
 open http://localhost:8080
 ```
 
@@ -79,7 +79,7 @@ worked example — CI renders it on every pull request, so it cannot drift from 
 
 ```bash
 helm install sandbox-dashboard oci://ghcr.io/agallea/charts/sandbox-dashboard \
-  -n sandbox-dashboard --create-namespace \
+  -n default \
   -f deploy/helm/sandbox-dashboard/values-example.yaml   # edit the URLs first
 ```
 
@@ -233,7 +233,7 @@ While the GHCR package is private, pulls need an `imagePullSecret`:
 
 ```bash
 kubectl create secret docker-registry ghcr-pull \
-  --namespace sandbox-dashboard \
+  --namespace default \
   --docker-server=ghcr.io \
   --docker-username=<your-gh-username> \
   --docker-password=<a-classic-PAT-with-read:packages>

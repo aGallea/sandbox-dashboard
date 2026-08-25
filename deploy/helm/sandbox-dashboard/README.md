@@ -4,7 +4,7 @@ Read-only operational dashboard for [kubernetes-sigs/agent-sandbox](https://gith
 
 ```bash
 helm install sandbox-dashboard oci://ghcr.io/agallea/charts/sandbox-dashboard \
-  --namespace sandbox-dashboard --create-namespace
+  --namespace default
 ```
 
 Nothing is required: with no values set you get the dashboard reading Sandboxes, claims,
@@ -39,7 +39,7 @@ Both are soft dependencies — the dashboard runs without either and says so in 
 
 ```bash
 helm upgrade --install sandbox-dashboard oci://ghcr.io/agallea/charts/sandbox-dashboard \
-  --namespace sandbox-dashboard \
+  --namespace default \
   --set prometheus.url=http://prometheus.monitoring.svc:9090 \
   --set openSandbox.url=http://opensandbox-server.default.svc \
   --set openSandbox.existingSecret=opensandbox-server-api-key
@@ -50,7 +50,7 @@ authenticated ingress — kept honest by CI, which renders it on every pull requ
 
 ```bash
 helm install sandbox-dashboard oci://ghcr.io/agallea/charts/sandbox-dashboard \
-  -n sandbox-dashboard --create-namespace \
+  -n default \
   -f deploy/helm/sandbox-dashboard/values-example.yaml
 ```
 
