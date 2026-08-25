@@ -22,10 +22,24 @@ serviceAccount:
   name: ""
   annotations: {}
 
+# Namespaces the dashboard watches. Empty (the default) means every namespace.
+#
+# Listing namespaces narrows the informers and the RBAC together, from a
+# ClusterRole to one Role per namespace — so the install cannot read pods it will
+# not show. Set this when sandboxes live in known namespaces:
+#
+#   watchNamespaces: [default]
+#
+# The namespaces must already exist; Helm will not create them. A narrowed
+# install shows only those sandboxes, with nothing in the UI saying so — the
+# startup log names the scope.
+watchNamespaces: []
+
 rbac:
-  # The dashboard reads Sandboxes, claims, templates, warm pools, pods and events
-  # across the cluster, so its role is a ClusterRole. Disable only if you manage
-  # the role yourself; without it the pod cannot serve any resource endpoint.
+  # The dashboard reads Sandboxes, claims, templates, warm pools, pods and
+  # events. Its role follows watchNamespaces: a ClusterRole when that is empty,
+  # otherwise a Role in each listed namespace. Disable only if you manage the
+  # role yourself; without it the pod cannot serve any resource endpoint.
   create: true
 
 service:

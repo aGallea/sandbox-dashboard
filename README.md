@@ -127,11 +127,12 @@ HTTP surface:
 ## Configuration
 
 Every setting is an environment variable, so the chart, a plain Deployment patch and a local
-binary all configure it the same way. Three also have flags, which win over the environment.
+binary all configure it the same way. Four also have flags, which win over the environment.
 
 | Env | Flag | Default | Purpose |
 |---|---|---|---|
 | `AGENT_SANDBOX_DASHBOARD_LISTEN_ADDR` | `--listen-addr` | `:8080` | Bind address. A bare port is accepted. |
+| `AGENT_SANDBOX_DASHBOARD_WATCH_NAMESPACES` | `--watch-namespaces` | every namespace | Comma-separated namespaces to watch. See [Scope](#scope). |
 | `PROMETHEUS_URL` | `--prometheus-url` | unset | Base URL. Unset disables the metrics page and the usage panels. |
 | `OPENSANDBOX_URL` | `--opensandbox-url` | unset | Base URL. Unset disables the OpenSandbox fields. |
 | `OPENSANDBOX_API_KEY` | — | unset | Sent as the `OPEN-SANDBOX-API-KEY` header. Env-only, so it can come from a Secret. |
@@ -141,6 +142,28 @@ binary all configure it the same way. Three also have flags, which win over the 
 | `AGENT_SANDBOX_DASHBOARD_OSB_STALE_AFTER` | — | `60s` | How long a transient OpenSandbox state may sit before it is reported stale. |
 | `AGENT_SANDBOX_DASHBOARD_OSB_TIMEOUT` | — | `5s` | Bounds one OpenSandbox inventory fetch. |
 | — | `--kubeconfig` | in-cluster | Registered by controller-runtime. Omit inside a cluster. |
+
+### Scope
+
+By default the dashboard watches every namespace, which needs a ClusterRole — and that grants
+`get`/`list`/`watch` on **pods and events cluster-wide**. On a shared cluster it can read every
+pod spec in every namespace.
+
+If sandboxes live in known namespaces, say so and it reads only those:
+
+```bash
+helm upgrade --install sandbox-dashboard oci://ghcr.io/agallea/charts/sandbox-dashboard \
+  --namespace default \
+  --set 'watchNamespaces={default}'
+```
+
+The chart derives the RBAC from the same value, swapping the ClusterRole for a Role and
+RoleBinding per namespace. They have to agree: a Role with cluster-wide informers fails closed
+but late — the list calls 403, the cache never syncs, and `/readyz` stays 503 with the cause
+only in the logs. One value cannot be set inconsistently; two could.
+
+The namespaces must already exist. A narrowed install shows a partial fleet with nothing in the
+UI saying so — the startup log and the install notes name the scope.
 
 ## Prometheus (optional)
 

@@ -12,12 +12,13 @@ templates, warm pools, pods and events cluster-wide, with both optional integrat
 
 ## What it installs
 
-A Deployment, a Service, a ServiceAccount, and a ClusterRole plus binding — five resources,
-all read-only. Optionally an Ingress, and a Secret when you pass the OpenSandbox key inline.
+A Deployment, a Service, a ServiceAccount, and a role plus binding — five resources, all
+read-only. Optionally an Ingress, and a Secret when you pass the OpenSandbox key inline.
 
-The role is a **ClusterRole** because the dashboard aggregates across namespaces. Its names
-carry the release name, so two installs in one cluster do not fight over the same
-cluster-scoped object.
+The role is a **ClusterRole** by default, because the dashboard aggregates across namespaces.
+Its names carry the release name, so two installs in one cluster do not fight over the same
+cluster-scoped object. Setting `watchNamespaces` swaps it for a Role and RoleBinding in each
+listed namespace — see [Narrowing the scope](#narrowing-the-scope).
 
 ## What each integration adds
 
@@ -70,6 +71,36 @@ cluster already has an opinion about ingress auth. `ingress.enabled=true` with n
 means anyone who can reach the host can read it, and `NOTES.txt` says so on install.
 `values.yaml` carries commented annotation sets for oauth2-proxy, nginx basic auth, and GCP IAP.
 
+
+## Narrowing the scope
+
+By default the dashboard watches every namespace, which needs a ClusterRole — and
+that grants `get`/`list`/`watch` on **pods and events cluster-wide**. On a shared
+cluster that means it can read every pod spec in every namespace.
+
+If sandboxes live in known namespaces, list them:
+
+```bash
+helm upgrade --install sandbox-dashboard oci://ghcr.io/agallea/charts/sandbox-dashboard \
+  --namespace default \
+  --set 'watchNamespaces={default}'
+```
+
+That replaces the ClusterRole with one Role and RoleBinding per namespace, so the
+install can only read what it will actually show.
+
+One value drives both the RBAC and the informers on purpose. They have to agree:
+a Role with cluster-wide informers fails closed but late — the list calls 403,
+the cache never syncs, and `/readyz` stays 503 with the cause buried in the
+manager's logs. Two separate settings could be set inconsistently; one cannot.
+
+Two things to know:
+
+- **The namespaces must already exist.** Helm will not create them, and a Role
+  targeting a missing namespace fails the install.
+- **A narrowed install shows a partial fleet with nothing in the UI saying so.**
+  The startup log and the post-install notes name the scope; the pages do not.
+
 ## Values
 
 | Key | Default | Purpose |
@@ -83,7 +114,8 @@ means anyone who can reach the host can read it, and `NOTES.txt` says so on inst
 | `serviceAccount.create` | `true` | Set `false` only with `serviceAccount.name`. |
 | `serviceAccount.name` | `""` | Defaults to the release's full name. |
 | `serviceAccount.annotations` | `{}` | For IRSA / Workload Identity. |
-| `rbac.create` | `true` | The ClusterRole and binding. Without an equivalent role the pod serves no resource. |
+| `watchNamespaces` | `[]` | Namespaces to watch. Empty means every namespace, via a ClusterRole. Listing namespaces narrows the informers *and* the RBAC to a Role per namespace — see [Narrowing the scope](#narrowing-the-scope). |
+| `rbac.create` | `true` | The role and binding. A ClusterRole when `watchNamespaces` is empty, otherwise a Role per namespace. Without an equivalent role the pod serves no resource. |
 | `service.type` | `ClusterIP` | |
 | `service.port` | `80` | Service port; the container port is `listenPort`. |
 | `service.annotations` | `{}` | |
@@ -123,4 +155,5 @@ means anyone who can reach the host can read it, and `NOTES.txt` says so on inst
 helm upgrade sandbox-dashboard oci://ghcr.io/agallea/charts/sandbox-dashboard --reuse-values
 ```
 
-`helm uninstall` removes everything, including the cluster-scoped role and binding.
+`helm uninstall` removes everything, including the role and binding — cluster-scoped by
+default, or the per-namespace ones when `watchNamespaces` is set.

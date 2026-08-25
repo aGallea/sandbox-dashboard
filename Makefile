@@ -51,6 +51,15 @@ helm-lint:
 	  --set ingress.enabled=true --set listenPort=9090 > /dev/null
 	helm template sandbox-dashboard deploy/helm/sandbox-dashboard \
 	  -f deploy/helm/sandbox-dashboard/values-example.yaml > /dev/null
+	# watchNamespaces must swap the ClusterRole for a Role per namespace. Getting
+	# this backwards installs cleanly and then 403s at list time, so assert it.
+	@set -e; out=$$(helm template sandbox-dashboard deploy/helm/sandbox-dashboard \
+	  --set 'watchNamespaces={default,team-a}'); \
+	  echo "$$out" | grep -q 'kind: ClusterRole' && { echo "::error::watchNamespaces still rendered a ClusterRole"; exit 1; } || true; \
+	  [ "$$(echo "$$out" | grep -c '^kind: Role$$')" = "2" ] || { echo "::error::expected one Role per watched namespace"; exit 1; }; \
+	  [ "$$(echo "$$out" | grep -c '^kind: RoleBinding$$')" = "2" ] || { echo "::error::expected one RoleBinding per watched namespace"; exit 1; }; \
+	  echo "$$out" | grep -q 'AGENT_SANDBOX_DASHBOARD_WATCH_NAMESPACES' || { echo "::error::the pod was not told which namespaces to watch"; exit 1; }; \
+	  echo "namespace-scoped RBAC renders correctly"
 
 clean:
 	rm -f $(BINARY)

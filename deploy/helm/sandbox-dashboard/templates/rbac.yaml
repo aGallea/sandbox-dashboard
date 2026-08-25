@@ -1,4 +1,46 @@
 {{- if .Values.rbac.create }}
+{{- if .Values.watchNamespaces }}
+{{- /*
+Namespace-scoped: one Role and RoleBinding per watched namespace. The dashboard
+reads nothing cluster-scoped, so a Role covers every resource it needs and the
+install never gets read access to pods it will not show.
+
+The namespaces must already exist — Helm will not create them, and a Role in a
+missing namespace fails the install rather than being skipped.
+*/}}
+{{- range $ns := .Values.watchNamespaces }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "sandbox-dashboard.fullname" $ }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "sandbox-dashboard.labels" $ | nindent 4 }}
+rules:
+  {{- include "sandbox-dashboard.rbacRules" $ | nindent 2 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "sandbox-dashboard.fullname" $ }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "sandbox-dashboard.labels" $ | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "sandbox-dashboard.serviceAccountName" $ }}
+    namespace: {{ $.Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "sandbox-dashboard.fullname" $ }}
+---
+{{- end }}
+{{- else }}
+{{- /*
+Cluster-wide: the default, and what an unset watchNamespaces needs — the
+informers list across every namespace, so a Role would 403 at startup.
+*/}}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -7,16 +49,7 @@ metadata:
   labels:
     {{- include "sandbox-dashboard.labels" . | nindent 4 }}
 rules:
-  # Read-only throughout: the dashboard never writes, and has no verbs to.
-  - apiGroups: ["agents.x-k8s.io"]
-    resources: ["sandboxes"]
-    verbs: ["get", "list", "watch"]
-  - apiGroups: ["extensions.agents.x-k8s.io"]
-    resources: ["sandboxtemplates", "sandboxclaims", "sandboxwarmpools"]
-    verbs: ["get", "list", "watch"]
-  - apiGroups: [""]
-    resources: ["pods", "events"]
-    verbs: ["get", "list", "watch"]
+  {{- include "sandbox-dashboard.rbacRules" . | nindent 2 }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -32,4 +65,5 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: {{ include "sandbox-dashboard.fullname" . }}
+{{- end }}
 {{- end }}

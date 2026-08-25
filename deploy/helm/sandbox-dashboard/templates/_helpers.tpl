@@ -61,3 +61,23 @@ has, or the one this chart creates from an inline value.
 {{- printf "%s-opensandbox" (include "sandbox-dashboard.fullname" .) -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+The read-only rules the dashboard needs, shared by the ClusterRole and the
+per-namespace Roles so the two cannot drift apart.
+
+The leading comment is emitted, not a template comment: deploy/install.yaml is
+a published artifact and readers of it should see why there are no write verbs.
+*/}}
+{{- define "sandbox-dashboard.rbacRules" -}}
+# Read-only throughout: the dashboard never writes, and has no verbs to.
+- apiGroups: ["agents.x-k8s.io"]
+  resources: ["sandboxes"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["extensions.agents.x-k8s.io"]
+  resources: ["sandboxtemplates", "sandboxclaims", "sandboxwarmpools"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["pods", "events"]
+  verbs: ["get", "list", "watch"]
+{{- end }}

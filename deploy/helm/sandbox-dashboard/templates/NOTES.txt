@@ -10,6 +10,13 @@ Reach it:
   open http://localhost:8080
 {{- end }}
 
+Watching:
+{{ if .Values.watchNamespaces }}  {{ join ", " .Values.watchNamespaces }} — sandboxes outside these namespaces are not shown,
+               and nothing in the UI says so. Widen with --set watchNamespaces={{ "{}" }} for every namespace.
+{{- else }}  every namespace (via a ClusterRole, which can read pods cluster-wide).
+               Narrow it with --set watchNamespaces={default} to a Role per namespace.
+{{- end }}
+
 Integrations:
 {{ if .Values.prometheus.url }}  Prometheus:  {{ .Values.prometheus.url }} (controller job "{{ .Values.prometheus.controllerJob }}")
 {{- else }}  Prometheus:  not set — the metrics page and the overview's usage panels report 503.

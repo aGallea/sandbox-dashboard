@@ -45,6 +45,12 @@ spec:
             # value drives the listener, the container port and the probes.
             - name: AGENT_SANDBOX_DASHBOARD_LISTEN_ADDR
               value: {{ .Values.listenPort | quote }}
+            {{- with .Values.watchNamespaces }}
+            # Same value that decided Role vs ClusterRole, so the informers and
+            # the RBAC can never disagree.
+            - name: AGENT_SANDBOX_DASHBOARD_WATCH_NAMESPACES
+              value: {{ join "," . | quote }}
+            {{- end }}
             {{- if .Values.prometheus.url }}
             - name: PROMETHEUS_URL
               value: {{ .Values.prometheus.url | quote }}
