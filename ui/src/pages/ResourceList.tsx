@@ -383,7 +383,16 @@ export function ResourceListPage({ kind }: Props) {
                       </td>
                     )}
                     {showCreator && (
-                      <td className="px-3 py-2 text-slate-600">{it.creator ?? '—'}</td>
+                      <td className="px-3 py-2 text-slate-600">
+                        {it.creator ? (
+                          <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                            <CreatorIcon creator={it.creator} />
+                            {it.creator}
+                          </span>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
                     )}
                     {showOwner && (
                       <td className="px-3 py-2 text-slate-600">
@@ -471,6 +480,54 @@ function PhasePill({ phase }: { phase: string }) {
       ? 'bg-amber-100 text-amber-800'
       : 'bg-slate-100 text-slate-700';
   return <span className={`px-2 py-0.5 rounded text-xs ${cls}`}>{phase || '—'}</span>;
+}
+
+/**
+ * A glyph for what created the sandbox. Decorative — the name stays next to it,
+ * so this is aria-hidden rather than labelled.
+ *
+ * Two shapes are named because two creators mean something specific: a sandbox
+ * the OpenSandbox server made, and one with no creator annotation at all — made
+ * directly against the API, usually by a harness. Anything else a fleet reports
+ * gets the neutral mark rather than no mark, so a creator nobody here has heard
+ * of still renders as a creator.
+ */
+function CreatorIcon({ creator }: { creator: string }) {
+  const shape =
+    creator === 'opensandbox' ? (
+      // A box, for the thing that boxes workloads up.
+      <>
+        <path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z" />
+        <path d="M4 7.5l8 4.5 8-4.5" />
+        <path d="M12 12v9" />
+      </>
+    ) : creator === 'unknown' ? (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M9.6 9.2a2.5 2.5 0 1 1 3.4 2.4c-.6.3-1 .9-1 1.6v.3" />
+        <path d="M12 17.2h.01" />
+      </>
+    ) : (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <circle cx="12" cy="12" r="3.5" />
+      </>
+    );
+
+  return (
+    <svg
+      aria-hidden
+      viewBox="0 0 24 24"
+      className="h-3.5 w-3.5 shrink-0 text-slate-400"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {shape}
+    </svg>
+  );
 }
 
 /**
