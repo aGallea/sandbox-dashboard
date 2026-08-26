@@ -136,7 +136,7 @@ Two things to know:
 | `openSandbox.staleAfter` | `60s` | How long a transient state may sit before it is reported stale. |
 | `openSandbox.timeout` | `5s` | Bounds one inventory fetch. |
 | `extraEnv` | `[]` | Anything the chart does not model, appended last. |
-| `resources` | 50m/64Mi → 500m/256Mi | Sized for the informer cache; raise memory for very large fleets. |
+| `resources` | 50m/64Mi → 500m/1Gi | Memory tracks fleet size, not traffic: the informer cache holds every sandbox, pod and event in scope. ~900 sandboxes measured at ~320Mi resident, so raise the *request* on a large fleet — see `values-example.yaml`. |
 | `podSecurityContext`, `securityContext` | nonroot, read-only rootfs, all caps dropped | Satisfies a `restricted` Pod Security Standard as shipped. |
 | `podAnnotations`, `podLabels` | `{}` | |
 | `nodeSelector`, `tolerations`, `affinity`, `topologySpreadConstraints`, `priorityClassName` | empty | Standard scheduling controls. |
