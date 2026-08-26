@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { useRefreshInterval } from '../api/refresh';
 import { Loading } from './Loading';
 import {
   LineChart,
