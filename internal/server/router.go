@@ -36,6 +36,10 @@ type Deps struct {
 	// Osb is the optional OpenSandbox client. If nil, sandbox rows carry no
 	// OpenSandbox state and the list response omits its osb block.
 	Osb OsbClient
+	// WatchNamespaces is the namespace scope the informers were given. Empty
+	// means every namespace. Reported on /api/v1/overview so the UI can say that
+	// a narrowed install is showing a partial fleet.
+	WatchNamespaces []string
 	// Now supplies the current time; tests substitute a fixed clock.
 	// If nil, time.Now is used.
 	Now func() time.Time
@@ -93,6 +97,11 @@ func New(d Deps) http.Handler {
 	r.Use(middleware.RealIP)
 	r.Use(slogRequestMiddleware(d.Logger))
 	r.Use(middleware.Recoverer)
+	// The sandbox list is the one big response here, and it is polled: a fleet of
+	// ~600 sandboxes serialises to ~690 kB, re-fetched by every open tab. It is
+	// repetitive JSON, so it compresses by around 90%. Applies to the embedded
+	// SPA's assets too.
+	r.Use(middleware.Compress(5))
 
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)

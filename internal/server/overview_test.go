@@ -85,3 +85,35 @@ func TestOverview_503WhenCacheNotSynced(t *testing.T) {
 	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
 	require.Equal(t, "application/problem+json", rec.Header().Get("Content-Type"))
 }
+
+// A narrowed install shows a partial fleet. The scope is in the startup log and
+// in NOTES.txt, but nothing reaches the page, so the count reads as the whole
+// cluster. The response has to carry the scope for the UI to be able to say so.
+func TestOverview_ReportsTheWatchedNamespaceScope(t *testing.T) {
+	c := fake.NewClientBuilder().WithScheme(k8s.NewScheme()).Build()
+
+	t.Run("names the namespaces a narrowed install watches", func(t *testing.T) {
+		r := New(Deps{
+			Client:          c,
+			CacheSynced:     func() bool { return true },
+			WatchNamespaces: []string{"default", "team-a"},
+		})
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/overview", nil))
+		require.Equal(t, http.StatusOK, rec.Code)
+
+		var got OverviewResponse
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+		require.Equal(t, []string{"default", "team-a"}, got.Scope.Namespaces)
+	})
+
+	// Absent, not an empty list: "watching everything" and "watching nothing"
+	// must not serialise the same way.
+	t.Run("omits the scope when the install watches every namespace", func(t *testing.T) {
+		r := New(Deps{Client: c, CacheSynced: func() bool { return true }})
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/overview", nil))
+		require.Equal(t, http.StatusOK, rec.Code)
+		require.NotContains(t, rec.Body.String(), "namespaces")
+	})
+}

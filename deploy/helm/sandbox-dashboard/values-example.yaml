@@ -51,11 +51,13 @@ ingress:
       hosts:
         - sandbox-dashboard.example.com
 
-# --- A larger fleet keeps more objects in the informer cache.
+# --- A larger fleet keeps more objects in the informer cache. A fleet of ~900
+# sandboxes measured at ~320Mi resident, so the request is what to raise here;
+# the limit is headroom for a fleet several times that.
 resources:
   requests:
     cpu: 100m
-    memory: 128Mi
+    memory: 384Mi
   limits:
     cpu: 500m
-    memory: 512Mi
+    memory: 1Gi

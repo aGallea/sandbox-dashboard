@@ -113,13 +113,16 @@ extraEnv: []
 #  - name: HTTPS_PROXY
 #    value: http://proxy.internal:3128
 
+# The informer cache holds every sandbox, pod and event in scope, so memory
+# tracks fleet size rather than traffic: measured at ~320Mi against a fleet of
+# ~900 sandboxes, which the previous 256Mi limit would have OOMKilled.
 resources:
   requests:
     cpu: 50m
     memory: 64Mi
   limits:
     cpu: 500m
-    memory: 256Mi
+    memory: 1Gi
 
 # The image runs as nonroot with a read-only root filesystem; these are the
 # settings that keep it that way under a restricted Pod Security Standard.

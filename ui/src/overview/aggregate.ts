@@ -80,7 +80,12 @@ export interface DimensionSpec {
 export interface Dimension extends DimensionSpec {
   /** How many distinct values this dimension has across the fleet. */
   parts: number;
+  /** How many sandboxes carry a value for it at all. */
+  covered: number;
 }
+
+/** Marks a dimension as one the fleet stamps rather than one we derived. */
+const LABEL_PREFIX = 'label:';
 
 const INTRINSIC: DimensionSpec[] = [
   { key: 'image', label: 'Image', of: (it) => shortImage(it.pod?.image) },
@@ -119,7 +124,7 @@ export function dimensionsFor(items: ResourceSummary[]): Dimension[] {
     ...Array.from(labelKeys)
       .sort()
       .map((key) => ({
-        key: `label:${key}`,
+        key: `${LABEL_PREFIX}${key}`,
         label: key,
         of: (it: ResourceSummary) => it.labels?.[key] ?? '',
       })),
@@ -128,27 +133,55 @@ export function dimensionsFor(items: ResourceSummary[]): Dimension[] {
 
   const cap = Math.max(2, Math.floor(items.length / 2));
   const sized = candidates
-    .map((d) => ({ d, parts: distinctCount(items, d, cap) }))
+    .map((d) => ({ d, ...spread(items, d, cap) }))
     .filter(({ parts }) => parts >= 2 && parts <= cap);
 
-  // A dimension that splits the fleet into a handful of parts is readable at a
-  // glance; one that splits it into fifty is a list. Offer the readable ones
-  // first so the default lands on a dimension worth looking at, and keep the
-  // long-tailed ones — image, node — one selection away.
+  // Three rankings, in order.
+  //
+  // A label someone chose to stamp says more about how the fleet is meant to be
+  // read than any field the dashboard invented, and it stays ahead of one: every
+  // pod has a CPU request, so ranking on coverage alone opens the page on "CPU
+  // request" with 90% of the fleet in one slice.
+  //
+  // Then readability: a dimension splitting the fleet into a handful of parts
+  // reads at a glance, one splitting it into fifty is a list, so the long-tailed
+  // ones — image, node — stay one selection away.
+  //
+  // Then coverage, which is what settles it between labels: `swe-instance-id`
+  // passed the size test on three sandboxes out of fifty-nine and opened the
+  // page on a ring that was 89% "unset".
   return sized
-    .sort((a, b) => band(a.parts) - band(b.parts))
-    .map(({ d, parts }) => ({ ...d, parts }));
+    .sort(
+      (a, b) =>
+        stamped(b.d) - stamped(a.d) || band(a.parts) - band(b.parts) || b.covered - a.covered,
+    )
+    .map(({ d, parts, covered }) => ({ ...d, parts, covered }));
 }
 
-/** Distinct non-empty values, giving up once past `cap`. */
-function distinctCount(items: ResourceSummary[], d: DimensionSpec, cap: number): number {
+/** Distinct non-empty values (giving up past `cap`) and how many rows have one. */
+function spread(
+  items: ResourceSummary[],
+  d: DimensionSpec,
+  cap: number,
+): { parts: number; covered: number } {
   const values = new Set<string>();
+  let covered = 0;
+  let gaveUp = false;
   for (const it of items) {
     const v = d.of(it);
-    if (v) values.add(v);
-    if (values.size > cap) return Infinity;
+    if (!v) continue;
+    covered += 1;
+    if (!gaveUp) {
+      values.add(v);
+      if (values.size > cap) gaveUp = true;
+    }
   }
-  return values.size;
+  return { parts: gaveUp ? Infinity : values.size, covered };
+}
+
+/** 1 for a label the fleet stamps, 0 for a field the dashboard derived. */
+function stamped(d: DimensionSpec): number {
+  return d.key.startsWith(LABEL_PREFIX) ? 1 : 0;
 }
 
 /** 0 for a part-to-whole shape, 1 for a long tail. Order within a band holds. */
@@ -314,10 +347,19 @@ export function used(items: ResourceSummary[], usage?: UsageResponse) {
 export interface Alert {
   label: string;
   count: number;
-  tone: 'bad' | 'warn';
+  /** `mute` is a count worth seeing that is not worth acting on. */
+  tone: 'bad' | 'warn' | 'mute';
   /** Where the list page can show exactly these rows; absent when it cannot. */
   to?: string;
 }
+
+/**
+ * How long a sandbox may take to become ready before that is a problem rather
+ * than a start-up. A fleet that churns from 0 to 300 sandboxes within hours
+ * always has a few seconds-old sandboxes not ready yet; counting those leaves
+ * the chip permanently red, and a chip that is always red is furniture.
+ */
+export const STARTUP_GRACE_SECONDS = 300;
 
 /**
  * What is worth acting on, loudest first. Only non-zero entries are returned —
@@ -326,17 +368,21 @@ export interface Alert {
  */
 export function alerts(items: ResourceSummary[]): Alert[] {
   const count = (p: (it: ResourceSummary) => boolean) => items.filter(p).length;
+  const waiting = (it: ResourceSummary) => {
+    const state = stateOf(it);
+    return state === 'notReady' || state === 'pending';
+  };
   const candidates: Alert[] = [
     {
-      label: 'not ready',
-      count: count((it) => stateOf(it) === 'notReady'),
+      label: `not ready for over ${formatAge(STARTUP_GRACE_SECONDS)}`,
+      count: count((it) => waiting(it) && it.ageSeconds > STARTUP_GRACE_SECONDS),
       tone: 'bad',
       to: '/sandboxes?f_phase=NotReady',
     },
     {
-      label: 'pending',
-      count: count((it) => stateOf(it) === 'pending'),
-      tone: 'warn',
+      label: 'still starting',
+      count: count((it) => waiting(it) && it.ageSeconds <= STARTUP_GRACE_SECONDS),
+      tone: 'mute',
     },
     {
       label: 'restarting',
@@ -362,6 +408,87 @@ export function alerts(items: ResourceSummary[]): Alert[] {
   ];
   return candidates.filter((a) => a.count > 0);
 }
+
+// ----- diagnosis -----------------------------------------------------------
+
+/** `stuck` and `failing` both need attention; only `failing` will not fix itself. */
+export type Verdict = 'ready' | 'starting' | 'stuck' | 'failing';
+
+export interface Diagnosis {
+  verdict: Verdict;
+  /** The evidence, in the words Kubernetes or OpenSandbox used. */
+  why: string;
+}
+
+/**
+ * Container waiting reasons that never resolve on their own. A pod pulling an
+ * image and a pod that cannot pull it look identical from the outside — same
+ * phase, same colour — so the reason is the only thing that tells them apart.
+ */
+const FATAL_WAITING = new Set([
+  'ImagePullBackOff',
+  'ErrImagePull',
+  'InvalidImageName',
+  'CrashLoopBackOff',
+  'CreateContainerConfigError',
+  'CreateContainerError',
+]);
+
+/**
+ * Whether one sandbox is fine, still coming up, late, or broken — and the reason.
+ *
+ * Colour alone cannot answer the question an operator actually has in front of a
+ * wall of amber cells: is this one going to start? A sandbox twenty seconds into
+ * a pull and one that has been retrying a bad image tag for an hour are the same
+ * state and completely different problems.
+ */
+export function diagnose(it: ResourceSummary): Diagnosis {
+  const pod = it.pod;
+  const restarts = pod?.restarts ?? 0;
+
+  if (pod?.waitingReason && FATAL_WAITING.has(pod.waitingReason)) {
+    return { verdict: 'failing', why: pod.waitingReason };
+  }
+  // Restarts outrank a Ready condition: a pod that keeps dying and coming back
+  // reports itself ready in the window between crashes.
+  if (restarts > 0) {
+    return { verdict: 'failing', why: `restarted ${restarts}×` };
+  }
+  if (it.osb?.state === 'Failed') {
+    return { verdict: 'failing', why: it.osb.reason || 'OpenSandbox reports Failed' };
+  }
+
+  const state = stateOf(it);
+  if (state === 'ready') return { verdict: 'ready', why: it.osb?.reason || 'Ready' };
+
+  // A transient OpenSandbox state that stopped advancing is late by OpenSandbox's
+  // own reckoning, whatever the sandbox's age says.
+  if (it.osb?.stale) {
+    return {
+      verdict: 'stuck',
+      why: `${it.osb.state} for ${formatAge(it.osb.stateAgeSeconds)}`,
+    };
+  }
+  if (it.ageSeconds > STARTUP_GRACE_SECONDS) {
+    return {
+      verdict: 'stuck',
+      why: `${pod?.waitingReason || it.osb?.reason || STATE_LABEL[state]} for ${formatAge(
+        it.ageSeconds,
+      )}`,
+    };
+  }
+  return {
+    verdict: 'starting',
+    why: pod?.waitingReason || it.osb?.reason || STATE_LABEL[state],
+  };
+}
+
+export const VERDICT_LABEL: Record<Verdict, string> = {
+  ready: 'Ready',
+  starting: 'Still starting',
+  stuck: 'Taking too long',
+  failing: 'Failing',
+};
 
 // ----- formatting ----------------------------------------------------------
 

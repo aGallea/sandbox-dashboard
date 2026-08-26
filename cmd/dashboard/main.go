@@ -140,13 +140,14 @@ func main() {
 		os.Exit(1)
 	}
 	deps := server.Deps{
-		Client:        mgr.GetClient(),
-		Metrics:       prom.NewRegistry(envOr("AGENT_SANDBOX_DASHBOARD_CONTROLLER_JOB", prom.DefaultControllerJob)),
-		CacheSynced:   cacheSynced.Load,
-		UIAssets:      assets,
-		Logger:        logger,
-		OsbStaleAfter: durationFromEnv("AGENT_SANDBOX_DASHBOARD_OSB_STALE_AFTER", server.DefaultOsbStaleAfter),
-		OsbTimeout:    durationFromEnv("AGENT_SANDBOX_DASHBOARD_OSB_TIMEOUT", server.DefaultOsbTimeout),
+		Client:          mgr.GetClient(),
+		WatchNamespaces: namespaces,
+		Metrics:         prom.NewRegistry(envOr("AGENT_SANDBOX_DASHBOARD_CONTROLLER_JOB", prom.DefaultControllerJob)),
+		CacheSynced:     cacheSynced.Load,
+		UIAssets:        assets,
+		Logger:          logger,
+		OsbStaleAfter:   durationFromEnv("AGENT_SANDBOX_DASHBOARD_OSB_STALE_AFTER", server.DefaultOsbStaleAfter),
+		OsbTimeout:      durationFromEnv("AGENT_SANDBOX_DASHBOARD_OSB_TIMEOUT", server.DefaultOsbTimeout),
 	}
 	// Only assign Prom when the client was actually created. Assigning a typed
 	// nil *prom.Client to a server.PromQuerier field would wrap it in a

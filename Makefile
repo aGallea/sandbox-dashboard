@@ -35,6 +35,15 @@ ui-test: ui-install
 # The chart is the source of truth; deploy/install.yaml is its rendered form for
 # people who would rather not install Helm. CI fails if the two disagree.
 manifests:
+	@# Helm 4 puts a blank line before every `---`, so regenerating with it churns
+	@# three lines that have nothing to do with your change — and CI, which pins
+	@# 3.16.2, then fails on a diff you cannot see the point of. Fail here instead.
+	@HELM_MAJOR=$$(helm version --template '{{.Version}}' 2>/dev/null | sed 's/^v//' | cut -d. -f1); \
+	  [ "$$HELM_MAJOR" = "3" ] || { \
+	    echo "manifests: needs Helm 3 (CI pins v3.16.2); found $$(helm version --short)." >&2; \
+	    echo "  Helm 4 renders the same chart with extra blank lines, which CI rejects." >&2; \
+	    exit 1; \
+	  }
 	@CHART_VERSION=$$(grep '^version:' deploy/helm/sandbox-dashboard/Chart.yaml | awk '{print $$2}'); \
 	{ \
 	  sed -e "s/@CHART_VERSION@/$$CHART_VERSION/" deploy/install.yaml.header; \

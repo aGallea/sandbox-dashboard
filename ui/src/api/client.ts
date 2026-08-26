@@ -20,6 +20,8 @@ export interface OverviewResponse {
   claims: ResourceCounts;
   templates: TemplateCounts;
   warmPools: WarmPoolCounts;
+  /** Absent when the install watches every namespace. */
+  scope?: { namespaces: string[] };
 }
 
 export async function fetchOverview(): Promise<OverviewResponse> {

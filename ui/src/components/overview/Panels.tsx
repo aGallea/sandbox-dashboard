@@ -107,10 +107,13 @@ export function TriageChips({ alerts }: { alerts: Alert[] }) {
         const tone =
           a.tone === 'bad'
             ? 'border-red-200 bg-red-50 text-red-900'
+            : a.tone === 'mute'
+            ? 'border-slate-200 bg-slate-50 text-slate-600'
             : 'border-amber-200 bg-amber-50 text-amber-900';
         const inner = (
           <>
-            <span aria-hidden>{a.tone === 'bad' ? '✕' : '!'}</span>
+            {/* A count worth seeing but not worth acting on gets no alarm mark. */}
+            {a.tone !== 'mute' && <span aria-hidden>{a.tone === 'bad' ? '✕' : '!'}</span>}
             <strong className="tabular-nums font-semibold">{a.count}</strong>
             <span className="font-normal">{a.label}</span>
           </>

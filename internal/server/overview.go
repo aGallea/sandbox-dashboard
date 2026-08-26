@@ -16,6 +16,15 @@ type OverviewResponse struct {
 	Claims    ResourceCounts `json:"claims"`
 	Templates TemplateCounts `json:"templates"`
 	WarmPools WarmPoolCounts `json:"warmPools"`
+	// Scope is absent when the install watches every namespace, which is what
+	// lets the UI tell "the whole cluster" from "these namespaces".
+	Scope *Scope `json:"scope,omitempty"`
+}
+
+// Scope is the part of the cluster this install can see. A narrowed install
+// counts a partial fleet, and without this the count reads as the whole cluster.
+type Scope struct {
+	Namespaces []string `json:"namespaces"`
 }
 
 // ResourceCounts is the count rollup for Sandbox and SandboxClaim — both expose Ready conditions.
@@ -42,6 +51,9 @@ func handleOverview(d Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		resp := OverviewResponse{}
+		if len(d.WatchNamespaces) > 0 {
+			resp.Scope = &Scope{Namespaces: d.WatchNamespaces}
+		}
 
 		var sbs v1alpha1.SandboxList
 		if err := d.Client.List(ctx, &sbs); err != nil {

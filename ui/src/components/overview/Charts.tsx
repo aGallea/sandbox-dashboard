@@ -10,6 +10,7 @@ import {
   YAxis,
 } from 'recharts';
 import {
+  OTHER_KEY,
   formatBytes,
   formatCores,
   type Bucket,
@@ -19,11 +20,31 @@ import {
 import { AXIS, GRID, HOVER, tooltipStyle } from '../../viz/palette';
 
 /**
+ * When a chart is also a control, the reader needs to see which slice they
+ * picked. Non-selected slices fade rather than recolour, so a hue still
+ * identifies the group it has always identified.
+ */
+export interface Selectable {
+  /** The slice currently scoping the page, if any. */
+  selected?: string;
+  /** Absent for a chart that only reports. `Other` is never offered. */
+  onSelect?: (key: string) => void;
+}
+
+const dimmed = (s: Slice, selected?: string) =>
+  selected && s.key !== selected ? 0.25 : 1;
+
+/**
  * Part-to-whole for one dimension. The legend carries the label, count and
  * share for every slice, so no value is reachable only by hovering — which is
  * also the relief the low-contrast fills need on a white surface.
  */
-export function Donut({ slices, total }: { slices: Slice[]; total: number }) {
+export function Donut({
+  slices,
+  total,
+  selected,
+  onSelect,
+}: { slices: Slice[]; total: number } & Selectable) {
   if (!total) return <p className="py-8 text-center text-sm text-slate-500">No sandboxes.</p>;
 
   // One category is not a chart. Say the number instead of drawing a ring
@@ -56,7 +77,15 @@ export function Donut({ slices, total }: { slices: Slice[]; total: number }) {
               isAnimationActive={false}
             >
               {slices.map((s) => (
-                <Cell key={s.key} fill={s.color} />
+                <Cell
+                  key={s.key}
+                  fill={s.color}
+                  fillOpacity={dimmed(s, selected)}
+                  cursor={onSelect && s.key !== OTHER_KEY ? 'pointer' : undefined}
+                  onClick={
+                    onSelect && s.key !== OTHER_KEY ? () => onSelect(s.key) : undefined
+                  }
+                />
               ))}
             </Pie>
             <Tooltip
@@ -70,22 +99,45 @@ export function Donut({ slices, total }: { slices: Slice[]; total: number }) {
         </ResponsiveContainer>
       </div>
       <dl className="min-w-[10rem] flex-1 space-y-1.5 text-sm">
-        {slices.map((s) => (
-          <div key={s.key} className="flex items-baseline gap-2">
-            <span
-              aria-hidden
-              className="mt-1.5 h-2 w-2 shrink-0 rounded-full"
-              style={{ background: s.color }}
-            />
-            <dt className="min-w-0 flex-1 truncate text-slate-600" title={s.key}>
-              {s.key}
-            </dt>
-            <dd className="tabular-nums text-slate-900">{s.count}</dd>
-            <dd className="w-9 text-right tabular-nums text-slate-400">
-              {Math.round((s.count / total) * 100)}%
-            </dd>
-          </div>
-        ))}
+        {slices.map((s) => {
+          const pickable = !!onSelect && s.key !== OTHER_KEY;
+          const row = (
+            <>
+              <span
+                aria-hidden
+                className="mt-1.5 h-2 w-2 shrink-0 rounded-full"
+                style={{ background: s.color, opacity: dimmed(s, selected) }}
+              />
+              <dt
+                className={`min-w-0 flex-1 truncate text-left ${
+                  s.key === selected ? 'font-medium text-slate-900' : 'text-slate-600'
+                }`}
+                title={s.key}
+              >
+                {s.key}
+              </dt>
+              <dd className="tabular-nums text-slate-900">{s.count}</dd>
+              <dd className="w-9 text-right tabular-nums text-slate-400">
+                {Math.round((s.count / total) * 100)}%
+              </dd>
+            </>
+          );
+          return pickable ? (
+            <button
+              key={s.key}
+              type="button"
+              onClick={() => onSelect(s.key)}
+              aria-pressed={s.key === selected}
+              className="flex w-full items-baseline gap-2 rounded px-1 -mx-1 hover:bg-slate-50"
+            >
+              {row}
+            </button>
+          ) : (
+            <div key={s.key} className="flex items-baseline gap-2 px-1 -mx-1">
+              {row}
+            </div>
+          );
+        })}
       </dl>
     </div>
   );
@@ -245,37 +297,70 @@ export function FootprintBars({ slices, showGpu }: { slices: Slice[]; showGpu: b
  * images, but a ranked list of the largest few, with the rest folded into one
  * row, says exactly how the fleet is spread.
  */
-export function ShareList({ slices, total }: { slices: Slice[]; total: number }) {
+export function ShareList({
+  slices,
+  total,
+  selected,
+  onSelect,
+}: { slices: Slice[]; total: number } & Selectable) {
   if (!total) return <p className="py-8 text-center text-sm text-slate-500">No sandboxes.</p>;
 
   return (
     <ul className="space-y-2.5">
-      {slices.map((s) => (
-        <li key={s.key}>
-          <div className="flex items-baseline justify-between gap-2 text-sm">
-            <span className="flex min-w-0 items-baseline gap-2">
-              <span
-                aria-hidden
-                className="h-2 w-2 shrink-0 rounded-full"
-                style={{ background: s.color }}
-              />
-              <span className="min-w-0 truncate text-slate-700" title={s.key}>
-                {s.key}
+      {slices.map((s) => {
+        const pickable = !!onSelect && s.key !== OTHER_KEY;
+        const body = (
+          <>
+            <div className="flex items-baseline justify-between gap-2 text-sm">
+              <span className="flex min-w-0 items-baseline gap-2">
+                <span
+                  aria-hidden
+                  className="h-2 w-2 shrink-0 rounded-full"
+                  style={{ background: s.color, opacity: dimmed(s, selected) }}
+                />
+                <span
+                  className={`min-w-0 truncate ${
+                    s.key === selected ? 'font-medium text-slate-900' : 'text-slate-700'
+                  }`}
+                  title={s.key}
+                >
+                  {s.key}
+                </span>
               </span>
-            </span>
-            <span className="shrink-0 tabular-nums text-slate-500">
-              <strong className="font-semibold text-slate-900">{s.count}</strong>{' '}
-              {Math.round((s.count / total) * 100)}%
-            </span>
-          </div>
-          <div className="mt-1 h-2 w-full rounded-full bg-slate-100">
-            <div
-              className="h-full rounded-full"
-              style={{ width: `${Math.max((s.count / total) * 100, 1)}%`, background: s.color }}
-            />
-          </div>
-        </li>
-      ))}
+              <span className="shrink-0 tabular-nums text-slate-500">
+                <strong className="font-semibold text-slate-900">{s.count}</strong>{' '}
+                {Math.round((s.count / total) * 100)}%
+              </span>
+            </div>
+            <div className="mt-1 h-2 w-full rounded-full bg-slate-100">
+              <div
+                className="h-full rounded-full"
+                style={{
+                  width: `${Math.max((s.count / total) * 100, 1)}%`,
+                  background: s.color,
+                  opacity: dimmed(s, selected),
+                }}
+              />
+            </div>
+          </>
+        );
+        return (
+          <li key={s.key}>
+            {pickable ? (
+              <button
+                type="button"
+                onClick={() => onSelect(s.key)}
+                aria-pressed={s.key === selected}
+                className="block w-full rounded px-1 -mx-1 text-left hover:bg-slate-50"
+              >
+                {body}
+              </button>
+            ) : (
+              body
+            )}
+          </li>
+        );
+      })}
     </ul>
   );
 }

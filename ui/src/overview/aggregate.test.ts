@@ -4,8 +4,11 @@ import type { ResourceSummary, UsageResponse } from '../api/client';
 import {
   DONUT_MAX,
   OTHER_KEY,
+  STARTUP_GRACE_SECONDS,
   ageBuckets,
   alerts,
+  diagnose,
+  dimensionsFor,
   formatAge,
   formatBytes,
   formatCores,
@@ -176,12 +179,139 @@ describe('alerts', () => {
 
   it('leads with the bad states and keeps every non-zero warning', () => {
     const found = alerts([
-      sandbox({ phase: 'NotReady' }),
+      sandbox({ phase: 'NotReady', ageSeconds: 600 }),
       sandbox({ pod: { name: 'p', phase: 'Running', restarts: 3, cpuMillis: 0, memBytes: 0, gpu: 0 } }),
       sandbox({ ageSeconds: 90_000 }),
     ]);
-    expect(found[0]).toMatchObject({ label: 'not ready', count: 1, tone: 'bad' });
-    expect(found.map((a) => a.label)).toEqual(['not ready', 'restarting', 'running over a day']);
+    expect(found[0]).toMatchObject({ count: 1, tone: 'bad' });
+    expect(found.map((a) => a.label)).toEqual([
+      'not ready for over 5m',
+      'restarting',
+      'running over a day',
+    ]);
+  });
+
+  // A fleet that churns from 0 to 300 sandboxes in hours always has a few
+  // sandboxes seconds into starting up. Counting those as "not ready" leaves the
+  // chip permanently red, which teaches the reader to ignore it.
+  describe('readiness is judged against how long the sandbox has had', () => {
+    it('does not raise a sandbox still inside the startup grace period', () => {
+      const found = alerts([sandbox({ phase: 'NotReady', ageSeconds: 8 })]);
+      expect(found.map((a) => a.tone)).not.toContain('bad');
+      expect(found).toEqual([{ label: 'still starting', count: 1, tone: 'mute' }]);
+    });
+
+    it('raises the same sandbox once it has had long enough', () => {
+      const found = alerts([sandbox({ phase: 'NotReady', ageSeconds: STARTUP_GRACE_SECONDS + 1 })]);
+      expect(found).toEqual([
+        {
+          label: 'not ready for over 5m',
+          count: 1,
+          tone: 'bad',
+          to: '/sandboxes?f_phase=NotReady',
+        },
+      ]);
+    });
+
+    it('counts a pod stuck in Pending the same way', () => {
+      const pending = { name: 'p', phase: 'Pending', restarts: 0, cpuMillis: 0, memBytes: 0, gpu: 0 };
+      expect(alerts([sandbox({ ageSeconds: 8, pod: pending })])[0].tone).toBe('mute');
+      expect(alerts([sandbox({ ageSeconds: 900, pod: pending })])[0].tone).toBe('bad');
+    });
+  });
+});
+
+describe('diagnose', () => {
+  const podWith = (over: Partial<NonNullable<ResourceSummary['pod']>>) => ({
+    name: 'p',
+    phase: 'Running',
+    restarts: 0,
+    cpuMillis: 0,
+    memBytes: 0,
+    gpu: 0,
+    ...over,
+  });
+
+  it('calls a ready sandbox ready', () => {
+    expect(diagnose(sandbox()).verdict).toBe('ready');
+  });
+
+  // The distinction the fleet strip exists to make: a sandbox seconds into
+  // pulling an image looks identical to one that will never start, and only one
+  // of them is worth waking up for.
+  it('separates a sandbox still starting from one that has had long enough', () => {
+    const young = sandbox({ phase: 'NotReady', ageSeconds: 20, pod: podWith({ phase: 'Pending' }) });
+    expect(diagnose(young).verdict).toBe('starting');
+
+    const old = sandbox({ phase: 'NotReady', ageSeconds: 900, pod: podWith({ phase: 'Pending' }) });
+    expect(diagnose(old).verdict).toBe('stuck');
+  });
+
+  it('calls a pod that cannot pull its image failing, however young it is', () => {
+    const it_ = sandbox({
+      phase: 'NotReady',
+      ageSeconds: 5,
+      pod: podWith({ waitingReason: 'ImagePullBackOff' }),
+    });
+    expect(diagnose(it_)).toMatchObject({ verdict: 'failing', why: 'ImagePullBackOff' });
+  });
+
+  it('calls a restarting pod failing even while Kubernetes reports it ready', () => {
+    const it_ = sandbox({ phase: 'Ready', pod: podWith({ restarts: 4 }) });
+    expect(diagnose(it_)).toMatchObject({ verdict: 'failing' });
+    expect(diagnose(it_).why).toContain('4');
+  });
+
+  it('trusts an OpenSandbox failure over the phase', () => {
+    const it_ = sandbox({
+      phase: 'NotReady',
+      ageSeconds: 5,
+      osb: { state: 'Failed', stateAgeSeconds: 5, diverged: false, stale: false },
+    });
+    expect(diagnose(it_).verdict).toBe('failing');
+  });
+
+  it('treats a transient OpenSandbox state that stopped advancing as stuck', () => {
+    const it_ = sandbox({
+      phase: 'NotReady',
+      ageSeconds: 30,
+      osb: { state: 'Pausing', stateAgeSeconds: 30, diverged: false, stale: true },
+    });
+    expect(diagnose(it_).verdict).toBe('stuck');
+  });
+});
+
+describe('dimensionsFor', () => {
+  // Ranking readable-first alone put `swe-instance-id` — set on 3 of 59
+  // sandboxes — ahead of `team`, so the overview opened on a ring that was 89%
+  // "unset". A dimension nearly nothing carries cannot be the default.
+  it('prefers the dimension the most sandboxes actually carry', () => {
+    const items = [
+      ...Array.from({ length: 4 }, () => sandbox({ labels: { team: 'algo' } })),
+      ...Array.from({ length: 5 }, () => sandbox({ labels: { team: 'gateway' } })),
+      sandbox({ labels: { team: 'algo', 'swe-instance-id': 'a' } }),
+      sandbox({ labels: { 'swe-instance-id': 'b' } }),
+    ];
+    const found = dimensionsFor(items);
+    expect(found[0].key).toBe('label:team');
+    expect(found.map((d) => d.key)).toContain('label:swe-instance-id');
+  });
+
+  // Coverage is a tie-breaker among labels, not a way for an intrinsic field to
+  // outrank them: every pod has a CPU request, so ranking on coverage alone
+  // opened the page on "CPU request", 90% of it one value.
+  it('keeps a stamped label ahead of a field every pod happens to have', () => {
+    const items = [
+      ...Array.from({ length: 5 }, () => sandbox({ labels: { team: 'algo' } })),
+      ...Array.from({ length: 4 }, () => sandbox({ labels: { team: 'gateway' } })),
+      sandbox({ pod: { name: 'p', phase: 'Running', restarts: 0, cpuMillis: 4000, memBytes: 0, gpu: 0 } }),
+    ];
+    expect(dimensionsFor(items)[0].key).toBe('label:team');
+  });
+
+  it('reports how much of the fleet a dimension covers', () => {
+    const items = [sandbox({ labels: { team: 'algo' } }), sandbox({ labels: { team: 'gw' } }), sandbox()];
+    expect(dimensionsFor(items).find((d) => d.key === 'label:team')?.covered).toBe(2);
   });
 });
 

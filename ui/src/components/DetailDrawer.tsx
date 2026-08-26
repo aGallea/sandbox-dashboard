@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   fetchDetail,
@@ -11,6 +11,7 @@ import {
   type WarmPoolDetail,
   type OsbView,
 } from '../api/client';
+import { useRefreshInterval } from '../api/refresh';
 import { ConditionsTable } from './ConditionsTable';
 import { Loading } from './Loading';
 import { EventsList } from './EventsList';
@@ -32,7 +33,27 @@ const clampWidth = (w: number) =>
 
 export function DetailDrawer({ kind, namespace, name, listUrl }: Props) {
   const navigate = useNavigate();
-  const close = () => navigate(listUrl, { replace: true });
+  const panel = useRef<HTMLElement>(null);
+  const close = useCallback(() => navigate(listUrl, { replace: true }), [navigate, listUrl]);
+
+  // Dismissed by anything outside the panel, and by Escape — a panel you can
+  // open but only close through one small ✕ is the part that felt stuck.
+  useEffect(() => {
+    // mousedown, not click: pressing another row closes this drawer and lets
+    // that row's own click open its one, rather than the two fighting.
+    const onDown = (e: MouseEvent) => {
+      if (!panel.current?.contains(e.target as Node)) close();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') close();
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [close]);
 
   const [width, setWidth] = useState(
     () => Number(localStorage.getItem(WIDTH_KEY)) || DEFAULT_WIDTH,
@@ -72,14 +93,17 @@ export function DetailDrawer({ kind, namespace, name, listUrl }: Props) {
         namespace,
         name,
       ),
-    refetchInterval: 10_000,
+    refetchInterval: useRefreshInterval(2),
   });
 
   // Overlays the list rather than sitting beside it: the table keeps its full
   // width, so opening a row never reflows the columns underneath.
   return (
     <aside
-      className="absolute inset-y-0 right-0 z-40 flex max-w-full bg-white border-l border-slate-200 shadow-xl"
+      ref={panel}
+      role="dialog"
+      aria-label={`${kind} ${name}`}
+      className="drawer-enter absolute inset-y-0 right-0 z-40 flex max-w-full bg-white border-l border-slate-200 shadow-xl"
       style={{ width }}
     >
       <div
@@ -223,6 +247,7 @@ function OsbSection({
   /** OpenSandbox's own watch-fed view, from the sandbox's ResourceSummary. */
   osb?: OsbView;
 }) {
+  const detailRefetch = useRefreshInterval(2);
   const { data, isFetching, error, dataUpdatedAt } = useQuery({
     queryKey: ['osb-detail', namespace, name],
     queryFn: () => fetchSandboxOsb(namespace, name),
@@ -230,7 +255,7 @@ function OsbSection({
     // data undefined, which makes react-query reset status to "pending" on every
     // refetch — that would blink a genuine error section out every 10s. It also
     // avoids polling /osb forever for the many sandboxes OpenSandbox never created.
-    refetchInterval: (query) => (query.state.data ? 10_000 : false),
+    refetchInterval: (query) => (query.state.data ? detailRefetch : false),
     retry: false,
   });
 

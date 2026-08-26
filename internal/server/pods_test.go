@@ -208,3 +208,54 @@ func rowNamed(t *testing.T, rows []ResourceSummary, name string) ResourceSummary
 	t.Fatalf("no row named %q in %d rows", name, len(rows))
 	return ResourceSummary{}
 }
+
+// While an init container runs, the app container reports the placeholder
+// "PodInitializing" and nothing else. Measured on a real fleet, every pending
+// sandbox reported exactly that — so an init container stuck pulling its image
+// looked identical to one a second away from starting.
+func TestSandboxList_PrefersTheInitContainerReasonOverThePlaceholder(t *testing.T) {
+	waiting := func(reason string) corev1.ContainerState {
+		return corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: reason}}
+	}
+
+	t.Run("reports what the init container is stuck on", func(t *testing.T) {
+		pod := sandboxPod("pod-a", "default", "uid-a", requests("1", "2Gi"))
+		pod.Status.Phase = corev1.PodPending
+		pod.Status.InitContainerStatuses = []corev1.ContainerStatus{
+			{Name: "installer", State: waiting("ImagePullBackOff")},
+		}
+		pod.Status.ContainerStatuses = []corev1.ContainerStatus{
+			{Name: "sandbox", State: waiting("PodInitializing")},
+		}
+
+		objs := []client.Object{
+			&v1alpha1.Sandbox{ObjectMeta: metav1.ObjectMeta{Name: "sb-a", Namespace: "default", UID: types.UID("uid-a")}},
+			pod,
+		}
+		got := rowNamed(t, listSandboxes(t, objs), "sb-a").Pod
+		require.NotNil(t, got)
+		require.Equal(t, "ImagePullBackOff", got.WaitingReason)
+	})
+
+	// An init container that has finished is not waiting on anything, so the app
+	// container's own reason is the truthful one.
+	t.Run("falls back to the app container once init has finished", func(t *testing.T) {
+		pod := sandboxPod("pod-a", "default", "uid-a", requests("1", "2Gi"))
+		pod.Status.Phase = corev1.PodPending
+		pod.Status.InitContainerStatuses = []corev1.ContainerStatus{{
+			Name:  "installer",
+			State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{Reason: "Completed"}},
+		}}
+		pod.Status.ContainerStatuses = []corev1.ContainerStatus{
+			{Name: "sandbox", State: waiting("ContainerCreating")},
+		}
+
+		objs := []client.Object{
+			&v1alpha1.Sandbox{ObjectMeta: metav1.ObjectMeta{Name: "sb-a", Namespace: "default", UID: types.UID("uid-a")}},
+			pod,
+		}
+		got := rowNamed(t, listSandboxes(t, objs), "sb-a").Pod
+		require.NotNil(t, got)
+		require.Equal(t, "ContainerCreating", got.WaitingReason)
+	})
+}

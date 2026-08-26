@@ -109,5 +109,18 @@ func newPodView(pod *corev1.Pod) *PodView {
 			v.WaitingReason = st.State.Waiting.Reason
 		}
 	}
+
+	// Init containers block the app containers, and while they run the app
+	// container reports nothing but the placeholder "PodInitializing". So an init
+	// container stuck pulling an image reads the same as one about to finish
+	// unless we look past the placeholder at what is actually waiting.
+	for i := range pod.Status.InitContainerStatuses {
+		st := &pod.Status.InitContainerStatuses[i]
+		if st.State.Waiting == nil {
+			continue
+		}
+		v.WaitingReason = st.State.Waiting.Reason
+		break
+	}
 	return v
 }
