@@ -6,8 +6,10 @@ import {
   fetchOverview,
   fetchUsage,
   type OverviewResponse,
+  type ResourceSummary,
   type UsageResponse,
 } from '../api/client';
+import { shortId, taskLabel } from '../list/rows';
 import { Loading } from '../components/Loading';
 import { FleetStrip } from '../components/overview/FleetStrip';
 import {
@@ -19,6 +21,7 @@ import {
 } from '../components/overview/Charts';
 import { Panel, PanelNote, StatCard, TriageChips } from '../components/overview/Panels';
 import {
+  OTHER_KEY,
   ageBuckets,
   alerts,
   dimensionsFor,
@@ -28,13 +31,39 @@ import {
   coreLabel,
   groupBy,
   longestRunning,
-  shortImage,
   DONUT_MAX,
   podPhases,
   reserved,
   used,
   STATUS,
+  type Dimension,
 } from '../overview/aggregate';
+
+/**
+ * The one sentence worth reading after the count: what this fleet mostly is.
+ *
+ * Built from whichever dimension the fleet itself makes meaningful, so a cluster
+ * stamping `experiment` reads differently from one stamping `team`, and a cluster
+ * that stamps nothing gets no sentence rather than a filler one.
+ */
+function lead(items: ResourceSummary[], dimension?: Dimension): string {
+  // Only for a label the fleet stamps. "Most of it is one cpu request: 1 core"
+  // is a sentence about the dashboard's own vocabulary, not about the fleet, and
+  // silence beats filler.
+  if (!items.length || !dimension?.key.startsWith('label:')) return '';
+  const top = groupBy(items, dimension, 1)[0];
+  if (!top || top.key === OTHER_KEY || top.key === 'unset') return '';
+
+  const what = dimension.label.toLowerCase();
+  const value = top.key.length > 48 ? `${top.key.slice(0, 47)}…` : top.key;
+  const most =
+    top.count > items.length / 2
+      ? `Most of it — ${top.count} — is one ${what}: ${value}.`
+      : `Its largest ${what} is ${value}, with ${top.count}.`;
+
+  const missing = items.length - dimension.covered;
+  return missing > 0 ? `${most} ${missing} carry no ${what} label.` : most;
+}
 
 export function OverviewPage() {
   const [params, setParams] = useSearchParams();
@@ -81,6 +110,8 @@ export function OverviewPage() {
       reserved: reserved(items),
       used: used(items, usage.data),
       triage: alerts(items),
+      nodes: new Set(items.map((it) => it.pod?.node).filter(Boolean)).size,
+      lead: lead(items, dimension),
     }),
     [items, dimension, usage.data],
   );
@@ -99,57 +130,76 @@ export function OverviewPage() {
 
   const data = counts.data;
   const showGpu = view.reserved.gpu > 0;
+  const otherKinds = data.claims.total + data.templates.total + data.warmPools.total;
 
   return (
     <div className="mx-auto max-w-6xl space-y-4 p-6">
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard
-          label="Sandboxes"
-          value={data.sandboxes.total}
-          to="/sandboxes"
-          parts={
-            data.sandboxes.total
-              ? [
-                  { label: 'Ready', value: data.sandboxes.ready, color: STATUS.ready },
-                  { label: 'Not ready', value: data.sandboxes.notReady, color: STATUS.failed },
-                  { label: 'Unknown', value: data.sandboxes.unknown, color: STATUS.idle },
-                ]
-              : undefined
-          }
-        />
-        <StatCard
-          label="Claims"
-          value={data.claims.total}
-          to="/claims"
-          parts={
-            data.claims.total
-              ? [
-                  { label: 'Ready', value: data.claims.ready, color: STATUS.ready },
-                  { label: 'Not ready', value: data.claims.notReady, color: STATUS.failed },
-                  { label: 'Unknown', value: data.claims.unknown, color: STATUS.idle },
-                ]
-              : undefined
-          }
-        />
-        <StatCard label="Templates" value={data.templates.total} to="/templates" />
-        <StatCard
-          label="Warm pools"
-          value={data.warmPools.total}
-          to="/warmpools"
-          parts={
-            data.warmPools.total
-              ? [
-                  {
-                    label: 'Replicas ready',
-                    value: data.warmPools.readyReplicas,
-                    color: STATUS.ready,
-                  },
-                  { label: 'Desired', value: data.warmPools.replicas, color: STATUS.idle },
-                ]
-              : undefined
-          }
-        />
-      </div>
+      {/*
+        The fleet count comes from the same list every panel below is drawn from,
+        not from /api/v1/overview. Two independent five-second polls of the same
+        truth put "Ready 19 · Not ready 0" next to a strip flagging one not
+        ready, in one render — and a page that contradicts itself is not trusted
+        again.
+      */}
+      <header>
+        <h1 className="text-2xl text-slate-900">
+          {items.length === 0
+            ? 'No sandboxes in scope'
+            : `${items.length} ${items.length === 1 ? 'sandbox' : 'sandboxes'}${
+                view.nodes ? ` on ${view.nodes} ${view.nodes === 1 ? 'node' : 'nodes'}` : ''
+              }`}
+        </h1>
+        {view.lead && <p className="mt-1 text-sm text-slate-500">{view.lead}</p>}
+        {/* A narrowed install counts a partial fleet; only the log said so. */}
+        {data.scope && (
+          <p className="mt-1 text-xs text-slate-400">
+            Watching {data.scope.namespaces.length === 1 ? 'namespace' : 'namespaces'}{' '}
+            <span className="font-mono">{data.scope.namespaces.join(', ')}</span> only — sandboxes
+            elsewhere in the cluster are not counted here.
+          </p>
+        )}
+      </header>
+
+      {/* Four equal-weight cards, three of them reading zero, spend the top of
+          the page on kinds this cluster does not use. */}
+      {otherKinds === 0 ? (
+        <p className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-500">
+          No claims, templates or warm pools in scope.
+        </p>
+      ) : (
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
+          {data.claims.total > 0 && (
+            <StatCard
+              label="Claims"
+              value={data.claims.total}
+              to="/claims"
+              parts={[
+                { label: 'Ready', value: data.claims.ready, color: STATUS.ready },
+                { label: 'Not ready', value: data.claims.notReady, color: STATUS.failed },
+                { label: 'Unknown', value: data.claims.unknown, color: STATUS.idle },
+              ]}
+            />
+          )}
+          {data.templates.total > 0 && (
+            <StatCard label="Templates" value={data.templates.total} to="/templates" />
+          )}
+          {data.warmPools.total > 0 && (
+            <StatCard
+              label="Warm pools"
+              value={data.warmPools.total}
+              to="/warmpools"
+              parts={[
+                {
+                  label: 'Replicas ready',
+                  value: data.warmPools.readyReplicas,
+                  color: STATUS.ready,
+                },
+                { label: 'Desired', value: data.warmPools.replicas, color: STATUS.idle },
+              ]}
+            />
+          )}
+        </div>
+      )}
 
       {!items.length ? (
         <Panel title="Fleet health">
@@ -217,7 +267,9 @@ export function OverviewPage() {
             >
               {dimensions.map((d) => (
                 <option key={d.key} value={d.key}>
+                  {/* Say what a dimension misses before it is picked, not after. */}
                   {d.label}
+                  {d.covered < items.length ? ` (${d.covered} of ${items.length})` : ''}
                 </option>
               ))}
             </select>
@@ -263,11 +315,17 @@ export function OverviewPage() {
                   title={it.name}
                   className="flex items-baseline justify-between gap-3 text-sm hover:underline"
                 >
+                  {/*
+                    Two spans separated by a margin read as one word to a screen
+                    reader — "busybox:1.36demo-alp". The separator has to be a
+                    character, not spacing. Names match the list page's, so the
+                    same sandbox is called the same thing on both.
+                  */}
                   <span className="min-w-0 truncate text-slate-700">
-                    {shortImage(it.pod?.image) || it.name}
-                    <span className="ml-2 text-slate-400">
-                      {it.name.replace(/^sandbox-/, '').slice(0, 8)}
-                    </span>
+                    {taskLabel(it).label}
+                    {shortId(it.name) && (
+                      <span className="text-slate-400"> · {shortId(it.name)}</span>
+                    )}
                   </span>
                   <span className="shrink-0 tabular-nums text-slate-500">
                     {formatAge(it.ageSeconds)}

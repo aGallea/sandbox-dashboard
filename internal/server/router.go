@@ -36,6 +36,10 @@ type Deps struct {
 	// Osb is the optional OpenSandbox client. If nil, sandbox rows carry no
 	// OpenSandbox state and the list response omits its osb block.
 	Osb OsbClient
+	// WatchNamespaces is the namespace scope the informers were given. Empty
+	// means every namespace. Reported on /api/v1/overview so the UI can say that
+	// a narrowed install is showing a partial fleet.
+	WatchNamespaces []string
 	// Now supplies the current time; tests substitute a fixed clock.
 	// If nil, time.Now is used.
 	Now func() time.Time
