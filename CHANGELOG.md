@@ -12,6 +12,13 @@ The 0.4.0 entry below predates that and is hand-written.
 
 ---
 
+## [0.5.0](https://github.com/aGallea/sandbox-dashboard/compare/v0.4.1...v0.5.0) (2026-08-26)
+
+
+### Features
+
+* let an install watch only the namespaces its sandboxes live in ([#16](https://github.com/aGallea/sandbox-dashboard/issues/16)) ([55e5774](https://github.com/aGallea/sandbox-dashboard/commit/55e5774632bb8bee24f0066f2445b38df5dddbcd))
+
 ## [0.4.1](https://github.com/aGallea/sandbox-dashboard/compare/v0.4.0...v0.4.1) (2026-08-23)
 
 
