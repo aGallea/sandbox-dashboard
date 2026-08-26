@@ -97,6 +97,11 @@ func New(d Deps) http.Handler {
 	r.Use(middleware.RealIP)
 	r.Use(slogRequestMiddleware(d.Logger))
 	r.Use(middleware.Recoverer)
+	// The sandbox list is the one big response here, and it is polled: a fleet of
+	// ~600 sandboxes serialises to ~690 kB, re-fetched by every open tab. It is
+	// repetitive JSON, so it compresses by around 90%. Applies to the embedded
+	// SPA's assets too.
+	r.Use(middleware.Compress(5))
 
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
