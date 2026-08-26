@@ -1,6 +1,6 @@
 # GENERATED FILE — DO NOT EDIT.
 #
-# Rendered from deploy/helm/sandbox-dashboard (chart 0.4.1) with default
+# Rendered from deploy/helm/sandbox-dashboard (chart 0.5.0) with default
 # values, into the "default" namespace. Regenerate with:
 #
 #     make manifests
@@ -23,10 +23,10 @@ kind: ServiceAccount
 metadata:
   name: sandbox-dashboard
   labels:
-    helm.sh/chart: sandbox-dashboard-0.4.1
+    helm.sh/chart: sandbox-dashboard-0.5.0
     app.kubernetes.io/name: sandbox-dashboard
     app.kubernetes.io/instance: sandbox-dashboard
-    app.kubernetes.io/version: "0.4.1"
+    app.kubernetes.io/version: "0.5.0"
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: dashboard
 ---
@@ -37,10 +37,10 @@ metadata:
   # Cluster-scoped, so the name carries the release to keep two installs apart.
   name: sandbox-dashboard
   labels:
-    helm.sh/chart: sandbox-dashboard-0.4.1
+    helm.sh/chart: sandbox-dashboard-0.5.0
     app.kubernetes.io/name: sandbox-dashboard
     app.kubernetes.io/instance: sandbox-dashboard
-    app.kubernetes.io/version: "0.4.1"
+    app.kubernetes.io/version: "0.5.0"
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: dashboard
 rules:
@@ -61,10 +61,10 @@ kind: ClusterRoleBinding
 metadata:
   name: sandbox-dashboard
   labels:
-    helm.sh/chart: sandbox-dashboard-0.4.1
+    helm.sh/chart: sandbox-dashboard-0.5.0
     app.kubernetes.io/name: sandbox-dashboard
     app.kubernetes.io/instance: sandbox-dashboard
-    app.kubernetes.io/version: "0.4.1"
+    app.kubernetes.io/version: "0.5.0"
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: dashboard
 subjects:
@@ -82,10 +82,10 @@ kind: Service
 metadata:
   name: sandbox-dashboard
   labels:
-    helm.sh/chart: sandbox-dashboard-0.4.1
+    helm.sh/chart: sandbox-dashboard-0.5.0
     app.kubernetes.io/name: sandbox-dashboard
     app.kubernetes.io/instance: sandbox-dashboard
-    app.kubernetes.io/version: "0.4.1"
+    app.kubernetes.io/version: "0.5.0"
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: dashboard
 spec:
@@ -105,10 +105,10 @@ kind: Deployment
 metadata:
   name: sandbox-dashboard
   labels:
-    helm.sh/chart: sandbox-dashboard-0.4.1
+    helm.sh/chart: sandbox-dashboard-0.5.0
     app.kubernetes.io/name: sandbox-dashboard
     app.kubernetes.io/instance: sandbox-dashboard
-    app.kubernetes.io/version: "0.4.1"
+    app.kubernetes.io/version: "0.5.0"
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: dashboard
 spec:
@@ -134,7 +134,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: dashboard
-          image: "ghcr.io/agallea/sandbox-dashboard:0.4.1"
+          image: "ghcr.io/agallea/sandbox-dashboard:0.5.0"
           imagePullPolicy: IfNotPresent
           env:
             # The port comes from the environment rather than args so that one
