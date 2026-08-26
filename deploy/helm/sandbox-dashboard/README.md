@@ -109,7 +109,7 @@ Two things to know:
 | `image.repository` | `ghcr.io/agallea/sandbox-dashboard` | Image. |
 | `image.tag` | `""` | Defaults to the chart's `appVersion`. |
 | `image.pullPolicy` | `IfNotPresent` | |
-| `imagePullSecrets` | `[]` | Needed only while the GHCR package is private. |
+| `imagePullSecrets` | `[]` | Not needed for the published image, which is public. For a private mirror of it. |
 | `nameOverride` / `fullnameOverride` | `""` | Standard naming overrides. |
 | `serviceAccount.create` | `true` | Set `false` only with `serviceAccount.name`. |
 | `serviceAccount.name` | `""` | Defaults to the release's full name. |
