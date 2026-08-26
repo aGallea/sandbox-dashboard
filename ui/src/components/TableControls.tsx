@@ -69,12 +69,15 @@ export function ColumnHeader({
   label,
   col,
   pad = 'px-3',
+  hint,
   sort,
   filter,
 }: {
   label: string;
   col: string;
   pad?: string;
+  /** Says what the column sorts by, when the cell shows more than one number. */
+  hint?: string;
   sort: { key: string; dir: SortDir; onSort: (key: string) => void };
   filter?: FilterProps;
 }) {
@@ -89,6 +92,7 @@ export function ColumnHeader({
           type="button"
           className="inline-flex items-center gap-1 select-none hover:text-slate-900"
           onClick={() => sort.onSort(col)}
+          title={hint}
         >
           {label}
           <span className={active ? '' : 'invisible'} aria-hidden>
