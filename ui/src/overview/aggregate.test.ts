@@ -7,6 +7,7 @@ import {
   STARTUP_GRACE_SECONDS,
   ageBuckets,
   alerts,
+  diagnose,
   dimensionsFor,
   formatAge,
   formatBytes,
@@ -217,6 +218,66 @@ describe('alerts', () => {
       expect(alerts([sandbox({ ageSeconds: 8, pod: pending })])[0].tone).toBe('mute');
       expect(alerts([sandbox({ ageSeconds: 900, pod: pending })])[0].tone).toBe('bad');
     });
+  });
+});
+
+describe('diagnose', () => {
+  const podWith = (over: Partial<NonNullable<ResourceSummary['pod']>>) => ({
+    name: 'p',
+    phase: 'Running',
+    restarts: 0,
+    cpuMillis: 0,
+    memBytes: 0,
+    gpu: 0,
+    ...over,
+  });
+
+  it('calls a ready sandbox ready', () => {
+    expect(diagnose(sandbox()).verdict).toBe('ready');
+  });
+
+  // The distinction the fleet strip exists to make: a sandbox seconds into
+  // pulling an image looks identical to one that will never start, and only one
+  // of them is worth waking up for.
+  it('separates a sandbox still starting from one that has had long enough', () => {
+    const young = sandbox({ phase: 'NotReady', ageSeconds: 20, pod: podWith({ phase: 'Pending' }) });
+    expect(diagnose(young).verdict).toBe('starting');
+
+    const old = sandbox({ phase: 'NotReady', ageSeconds: 900, pod: podWith({ phase: 'Pending' }) });
+    expect(diagnose(old).verdict).toBe('stuck');
+  });
+
+  it('calls a pod that cannot pull its image failing, however young it is', () => {
+    const it_ = sandbox({
+      phase: 'NotReady',
+      ageSeconds: 5,
+      pod: podWith({ waitingReason: 'ImagePullBackOff' }),
+    });
+    expect(diagnose(it_)).toMatchObject({ verdict: 'failing', why: 'ImagePullBackOff' });
+  });
+
+  it('calls a restarting pod failing even while Kubernetes reports it ready', () => {
+    const it_ = sandbox({ phase: 'Ready', pod: podWith({ restarts: 4 }) });
+    expect(diagnose(it_)).toMatchObject({ verdict: 'failing' });
+    expect(diagnose(it_).why).toContain('4');
+  });
+
+  it('trusts an OpenSandbox failure over the phase', () => {
+    const it_ = sandbox({
+      phase: 'NotReady',
+      ageSeconds: 5,
+      osb: { state: 'Failed', stateAgeSeconds: 5, diverged: false, stale: false },
+    });
+    expect(diagnose(it_).verdict).toBe('failing');
+  });
+
+  it('treats a transient OpenSandbox state that stopped advancing as stuck', () => {
+    const it_ = sandbox({
+      phase: 'NotReady',
+      ageSeconds: 30,
+      osb: { state: 'Pausing', stateAgeSeconds: 30, diverged: false, stale: true },
+    });
+    expect(diagnose(it_).verdict).toBe('stuck');
   });
 });
 

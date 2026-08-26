@@ -409,6 +409,87 @@ export function alerts(items: ResourceSummary[]): Alert[] {
   return candidates.filter((a) => a.count > 0);
 }
 
+// ----- diagnosis -----------------------------------------------------------
+
+/** `stuck` and `failing` both need attention; only `failing` will not fix itself. */
+export type Verdict = 'ready' | 'starting' | 'stuck' | 'failing';
+
+export interface Diagnosis {
+  verdict: Verdict;
+  /** The evidence, in the words Kubernetes or OpenSandbox used. */
+  why: string;
+}
+
+/**
+ * Container waiting reasons that never resolve on their own. A pod pulling an
+ * image and a pod that cannot pull it look identical from the outside — same
+ * phase, same colour — so the reason is the only thing that tells them apart.
+ */
+const FATAL_WAITING = new Set([
+  'ImagePullBackOff',
+  'ErrImagePull',
+  'InvalidImageName',
+  'CrashLoopBackOff',
+  'CreateContainerConfigError',
+  'CreateContainerError',
+]);
+
+/**
+ * Whether one sandbox is fine, still coming up, late, or broken — and the reason.
+ *
+ * Colour alone cannot answer the question an operator actually has in front of a
+ * wall of amber cells: is this one going to start? A sandbox twenty seconds into
+ * a pull and one that has been retrying a bad image tag for an hour are the same
+ * state and completely different problems.
+ */
+export function diagnose(it: ResourceSummary): Diagnosis {
+  const pod = it.pod;
+  const restarts = pod?.restarts ?? 0;
+
+  if (pod?.waitingReason && FATAL_WAITING.has(pod.waitingReason)) {
+    return { verdict: 'failing', why: pod.waitingReason };
+  }
+  // Restarts outrank a Ready condition: a pod that keeps dying and coming back
+  // reports itself ready in the window between crashes.
+  if (restarts > 0) {
+    return { verdict: 'failing', why: `restarted ${restarts}×` };
+  }
+  if (it.osb?.state === 'Failed') {
+    return { verdict: 'failing', why: it.osb.reason || 'OpenSandbox reports Failed' };
+  }
+
+  const state = stateOf(it);
+  if (state === 'ready') return { verdict: 'ready', why: it.osb?.reason || 'Ready' };
+
+  // A transient OpenSandbox state that stopped advancing is late by OpenSandbox's
+  // own reckoning, whatever the sandbox's age says.
+  if (it.osb?.stale) {
+    return {
+      verdict: 'stuck',
+      why: `${it.osb.state} for ${formatAge(it.osb.stateAgeSeconds)}`,
+    };
+  }
+  if (it.ageSeconds > STARTUP_GRACE_SECONDS) {
+    return {
+      verdict: 'stuck',
+      why: `${pod?.waitingReason || it.osb?.reason || STATE_LABEL[state]} for ${formatAge(
+        it.ageSeconds,
+      )}`,
+    };
+  }
+  return {
+    verdict: 'starting',
+    why: pod?.waitingReason || it.osb?.reason || STATE_LABEL[state],
+  };
+}
+
+export const VERDICT_LABEL: Record<Verdict, string> = {
+  ready: 'Ready',
+  starting: 'Still starting',
+  stuck: 'Taking too long',
+  failing: 'Failing',
+};
+
 // ----- formatting ----------------------------------------------------------
 
 export function formatCores(millis: number): string {
