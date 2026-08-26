@@ -77,6 +77,10 @@ export function matchesQuery(it: ResourceSummary, query: string): boolean {
     it.creator,
     it.pod?.image,
     it.pod?.node,
+    // Every label value, not a chosen few: the overview's grouping dimensions
+    // are discovered from whatever a fleet stamps, and it hands their values to
+    // this search to drill into a group.
+    ...Object.values(it.labels ?? {}),
   ]
     .join(' ')
     .toLowerCase()

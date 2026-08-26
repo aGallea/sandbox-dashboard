@@ -107,6 +107,15 @@ describe('matchesQuery', () => {
     expect(matchesQuery(it_, 'tensorflow')).toBe(false);
   });
 
+  // The overview hands a group's value to this search to drill into it, and the
+  // groups are discovered from whatever labels a fleet stamps — so a label this
+  // code has never heard of still has to be searchable.
+  it('matches the value of any label the fleet stamps', () => {
+    const labelled = sandbox({ labels: { project: 'e2e-eval', 'swe-instance-id': 'flipt-c1fd' } });
+    expect(matchesQuery(labelled, 'e2e-eval')).toBe(true);
+    expect(matchesQuery(labelled, 'flipt')).toBe(true);
+  });
+
   it('keeps every row when the query is empty', () => {
     expect(matchesQuery(sandbox(), '')).toBe(true);
   });

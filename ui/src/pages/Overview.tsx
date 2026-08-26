@@ -65,9 +65,26 @@ export function OverviewPage() {
   // the list is still loading.
   const items = useMemo(() => fleet.data?.items ?? [], [fleet.data]);
 
+  // Discovered from the whole fleet, never from the filtered subset: a filter
+  // narrows to one value, which would make its own dimension stop dividing
+  // anything and drop out of the list the filter is cleared from.
   const dimensions = useMemo(() => dimensionsFor(items), [items]);
   const dimension =
     dimensions.find((d) => d.key === params.get('by')) ?? dimensions[0];
+  const selected = params.get('v') ?? undefined;
+
+  /**
+   * Every panel below reads this instead of the full fleet. The group panel is
+   * the exception — it stays the switcher, so it keeps showing the whole
+   * breakdown with the picked slice lit.
+   */
+  const scope = useMemo(
+    () =>
+      selected && dimension
+        ? items.filter((it) => (dimension.of(it) || 'unset') === selected)
+        : items,
+    [items, dimension, selected],
+  );
 
   const view = useMemo(
     () => ({
@@ -75,16 +92,21 @@ export function OverviewPage() {
       // ring; a long tail — sixty images — reads as a ranked list.
       groups: dimension ? groupBy(items, dimension, 5, usage.data) : [],
       asRing: !!dimension && dimension.parts <= DONUT_MAX,
-      phases: podPhases(items),
-      buckets: ageBuckets(items),
-      oldest: longestRunning(items),
-      reserved: reserved(items),
-      used: used(items, usage.data),
-      triage: alerts(items),
+      footprint: dimension ? groupBy(scope, dimension, 5, usage.data) : [],
+      phases: podPhases(scope),
+      buckets: ageBuckets(scope),
+      oldest: longestRunning(scope),
+      reserved: reserved(scope),
+      used: used(scope, usage.data),
+      triage: alerts(scope),
       // Same readiness rule the server applies, over the list the rest of this
       // page is drawn from. Counting from /api/v1/overview instead put
       // "Ready 19 · Not ready 0" beside a strip flagging one not ready, in one
       // paint, because they are two independent five-second polls.
+      // From the whole fleet, not the scope: these feed the count cards, which
+      // sit above the filter chip and are what "897 of 906" is measured against.
+      // Mixing a fleet-wide total with filtered parts made the card's own
+      // breakdown fail to add up to its own number.
       fleet: items.reduce(
         (acc, it) => {
           if (it.phase === 'Ready') acc.ready += 1;
@@ -95,12 +117,29 @@ export function OverviewPage() {
         { ready: 0, notReady: 0, unknown: 0 },
       ),
     }),
-    [items, dimension, usage.data],
+    [items, scope, dimension, usage.data],
   );
 
   const setDimension = (key: string) => {
     const next = new URLSearchParams(params);
     next.set('by', key);
+    // A value picked from the old dimension does not exist in the new one, so
+    // keeping it would filter the page down to nothing.
+    next.delete('v');
+    setParams(next, { replace: true });
+  };
+
+  /** Clicking the picked slice again clears it — the same control both ways. */
+  const toggleValue = (value: string) => {
+    const next = new URLSearchParams(params);
+    if (value === selected) next.delete('v');
+    else next.set('v', value);
+    setParams(next, { replace: true });
+  };
+
+  const clearValue = () => {
+    const next = new URLSearchParams(params);
+    next.delete('v');
     setParams(next, { replace: true });
   };
 
@@ -183,26 +222,75 @@ export function OverviewPage() {
         </p>
       )}
 
-      {!items.length ? (
+      {/*
+        Says what the rest of the page is now about, and is the only way back —
+        so it sits above everything it scopes rather than beside the chart that
+        set it.
+      */}
+      {selected && dimension && (
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-blue-200 bg-blue-50/60 px-4 py-2.5 text-sm">
+          <span className="text-slate-600">
+            Showing {dimension.label.toLowerCase()}{' '}
+            <strong className="font-semibold text-slate-900">{selected}</strong> —{' '}
+            <span className="tabular-nums">{scope.length}</span> of {items.length} sandboxes
+          </span>
+          {/*
+            Only for a stamped label, whose value the list's search can actually
+            match. "1 core" or "Running" would hand over a search that finds
+            nothing, and a link that lies is worse than no link.
+          */}
+          {dimension.key.startsWith('label:') && (
+            <Link
+              to={`/sandboxes?q=${encodeURIComponent(selected)}`}
+              className="text-blue-800 underline decoration-blue-300 hover:decoration-blue-800"
+            >
+              open in list
+            </Link>
+          )}
+          <button
+            type="button"
+            onClick={clearValue}
+            className="ml-auto rounded border border-slate-300 bg-white px-2 py-0.5 text-xs text-slate-600 hover:bg-slate-50"
+          >
+            Show whole fleet
+          </button>
+        </div>
+      )}
+
+      {!scope.length ? (
         <Panel title="Fleet health">
           <div className="py-6 text-center">
-            <p className="text-sm text-slate-600">
-              No sandboxes in this cluster yet — nothing to chart.
-            </p>
-            <p className="mx-auto mt-2 max-w-xl text-xs text-slate-500">
-              Fleet health, reservations against live use, share and runtime breakdowns and the
-              resource footprint all appear here as soon as the first Sandbox is created. If you
-              expected some, check you are pointed at the right cluster and that the dashboard can
-              list sandboxes across namespaces.
-            </p>
+            {/* The fleet churns fast enough that a group can empty out while
+                its filter is still on. Say which of the two happened. */}
+            {selected ? (
+              <p className="text-sm text-slate-600">
+                Nothing in this group any more — every sandbox in it has gone. Clear the filter
+                above to see the rest of the fleet.
+              </p>
+            ) : (
+              <>
+                <p className="text-sm text-slate-600">
+                  No sandboxes in this cluster yet — nothing to chart.
+                </p>
+                <p className="mx-auto mt-2 max-w-xl text-xs text-slate-500">
+                  Fleet health, reservations against live use, share and runtime breakdowns and the
+                  resource footprint all appear here as soon as the first Sandbox is created. If you
+                  expected some, check you are pointed at the right cluster and that the dashboard
+                  can list sandboxes across namespaces.
+                </p>
+              </>
+            )}
           </div>
         </Panel>
       ) : (
         <>
-      <Panel title="Fleet health" hint={`${items.length} sandboxes, oldest first`}>
+      <Panel
+        title="Fleet health"
+        hint={`${scope.length} ${scope.length === 1 ? 'sandbox' : 'sandboxes'}, oldest first`}
+      >
         <TriageChips alerts={view.triage} />
         <div className="mt-4">
-          <FleetStrip items={items} />
+          <FleetStrip items={scope} />
         </div>
       </Panel>
 
@@ -261,13 +349,18 @@ export function OverviewPage() {
 
       <div className="grid items-start gap-4 lg:grid-cols-2">
         <Panel title="Pod status">
-          <Donut slices={view.phases} total={items.length} />
+          <Donut slices={view.phases} total={scope.length} />
         </Panel>
         <Panel
           title={dimension ? `By ${dimension.label.toLowerCase()}` : 'By group'}
           hint={
-            dimension && !view.asRing
-              ? `Largest 5 of ${dimension.parts}, rest folded into Other`
+            dimension
+              ? [
+                  'Select a group to scope this page to it',
+                  !view.asRing && `largest 5 of ${dimension.parts}, rest folded into Other`,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')
               : undefined
           }
         >
@@ -277,9 +370,19 @@ export function OverviewPage() {
               carries its own.
             </PanelNote>
           ) : view.asRing ? (
-            <Donut slices={view.groups} total={items.length} />
+            <Donut
+              slices={view.groups}
+              total={items.length}
+              selected={selected}
+              onSelect={toggleValue}
+            />
           ) : (
-            <ShareList slices={view.groups} total={items.length} />
+            <ShareList
+              slices={view.groups}
+              total={items.length}
+              selected={selected}
+              onSelect={toggleValue}
+            />
           )}
         </Panel>
       </div>
@@ -332,7 +435,7 @@ export function OverviewPage() {
             </span>
           }
         >
-          <FootprintBars slices={view.groups} showGpu={showGpu} />
+          <FootprintBars slices={view.footprint} showGpu={showGpu} />
         </Panel>
       )}
         </>
