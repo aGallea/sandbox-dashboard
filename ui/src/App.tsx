@@ -12,7 +12,11 @@ const MetricsPage = lazy(() =>
 export function App() {
   return (
     <div className="min-h-screen">
-      <header className="flex flex-wrap items-baseline gap-x-6 gap-y-2 bg-slate-900 px-6 py-3 text-white">
+      {/*
+        z-50 clears the list page's own sticky toolbar (z-30) and the detail
+        drawer (z-40), so nav stays reachable with either of them on screen.
+      */}
+      <header className="sticky top-0 z-50 flex flex-wrap items-baseline gap-x-6 gap-y-2 bg-slate-900 px-6 py-3 text-white">
         <Link to="/" className="font-bold">
           sandbox-dashboard
         </Link>
