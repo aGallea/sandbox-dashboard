@@ -12,6 +12,13 @@ The 0.4.0 entry below predates that and is hand-written.
 
 ---
 
+## [0.6.0](https://github.com/aGallea/sandbox-dashboard/compare/v0.5.0...v0.6.0) (2026-08-26)
+
+
+### Features
+
+* make the sandbox list and overview readable at fleet scale ([#19](https://github.com/aGallea/sandbox-dashboard/issues/19)) ([9af54f3](https://github.com/aGallea/sandbox-dashboard/commit/9af54f335da6ee717313b7273dfeffa4fd4022c7))
+
 ## [0.5.0](https://github.com/aGallea/sandbox-dashboard/compare/v0.4.1...v0.5.0) (2026-08-26)
 
 
