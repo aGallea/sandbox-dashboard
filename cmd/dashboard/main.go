@@ -39,9 +39,12 @@ func main() {
 	flag.StringVar(&promURL, "prometheus-url", "", "Optional Prometheus base URL (e.g. http://prometheus.monitoring.svc:9090). If empty, /api/v1/metrics/* returns 503.")
 	var osbURL string
 	flag.StringVar(&osbURL, "opensandbox-url", "", "Optional OpenSandbox base URL (e.g. http://opensandbox-server.default.svc). If empty, sandbox rows carry no OpenSandbox state.")
+	var watchNamespaces string
+	flag.StringVar(&watchNamespaces, "watch-namespaces", "", "Comma-separated namespaces to watch (e.g. default,team-a). If empty, every namespace — which needs a ClusterRole. Must match the RBAC this install was given; or AGENT_SANDBOX_DASHBOARD_WATCH_NAMESPACES.")
 	flag.Parse()
 
 	listenAddr = resolveListenAddr(listenAddr, os.Getenv("AGENT_SANDBOX_DASHBOARD_LISTEN_ADDR"))
+	namespaces := resolveWatchNamespaces(watchNamespaces, os.Getenv("AGENT_SANDBOX_DASHBOARD_WATCH_NAMESPACES"))
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	ctrl.SetLogger(slogToLogr(logger))
@@ -91,7 +94,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	mgr, err := k8s.NewManager(cfg)
+	// Say the scope out loud: a narrowed install shows a partial fleet with
+	// nothing in the UI to explain why, so the log is the only place to find out.
+	if len(namespaces) == 0 {
+		logger.Info("watching every namespace (requires a ClusterRole)")
+	} else {
+		logger.Info("watching namespaces", "namespaces", strings.Join(namespaces, ","))
+	}
+
+	mgr, err := k8s.NewManager(cfg, namespaces)
 	if err != nil {
 		logger.Error("create manager", "err", err)
 		os.Exit(1)
@@ -209,6 +220,24 @@ const DefaultListenAddr = ":8080"
 // resolveListenAddr picks the bind address: the flag if given, else the
 // environment, else the default. A bare port is accepted, since a Helm value or
 // a container port reads as a number more naturally than as ":8080".
+// resolveWatchNamespaces splits the flag (or its env fallback) into namespaces.
+// Blank entries are dropped rather than kept: a Helm range can easily emit a
+// trailing comma, and an empty namespace name would 403 at list time instead of
+// being ignored. Returns nil for "watch everything".
+func resolveWatchNamespaces(flagValue, envValue string) []string {
+	raw := flagValue
+	if raw == "" {
+		raw = envValue
+	}
+	var out []string
+	for _, ns := range strings.Split(raw, ",") {
+		if ns = strings.TrimSpace(ns); ns != "" {
+			out = append(out, ns)
+		}
+	}
+	return out
+}
+
 func resolveListenAddr(flagValue, envValue string) string {
 	addr := flagValue
 	if addr == "" {

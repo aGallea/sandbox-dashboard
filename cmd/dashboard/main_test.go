@@ -27,3 +27,36 @@ func TestResolveListenAddr(t *testing.T) {
 		})
 	}
 }
+
+func TestResolveWatchNamespaces(t *testing.T) {
+	tests := []struct {
+		name string
+		flag string
+		env  string
+		want []string
+	}{
+		{"nothing set means every namespace", "", "", nil},
+		{"single namespace", "default", "", []string{"default"}},
+		{"comma separated", "default,team-a", "", []string{"default", "team-a"}},
+		{"env only", "", "default", []string{"default"}},
+		{"flag beats env", "team-a", "default", []string{"team-a"}},
+		{"surrounding whitespace is trimmed", " default , team-a ", "", []string{"default", "team-a"}},
+		// A trailing comma is the kind of thing a Helm range emits; it should not
+		// become an empty namespace name, which would 403 at list time.
+		{"blank entries are dropped", "default,,team-a,", "", []string{"default", "team-a"}},
+		{"only separators means every namespace", ",  ,", "", nil},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := resolveWatchNamespaces(tc.flag, tc.env)
+			if len(got) != len(tc.want) {
+				t.Fatalf("resolveWatchNamespaces(%q, %q) = %v, want %v", tc.flag, tc.env, got, tc.want)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Errorf("resolveWatchNamespaces(%q, %q)[%d] = %q, want %q", tc.flag, tc.env, i, got[i], tc.want[i])
+				}
+			}
+		})
+	}
+}

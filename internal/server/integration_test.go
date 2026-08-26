@@ -46,7 +46,7 @@ func TestIntegration_OverviewAndDetailViaCachedClient(t *testing.T) {
 	t.Cleanup(func() { _ = env.Stop() })
 
 	// Build a real manager (the production code path).
-	mgr, err := k8s.NewManager(cfg)
+	mgr, err := k8s.NewManager(cfg, nil)
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
