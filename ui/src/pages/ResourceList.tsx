@@ -9,6 +9,7 @@ import { ColumnHeader, Pager, type SortDir } from '../components/TableControls';
 import { formatAge, formatBytes } from '../overview/aggregate';
 import { informative, matchesQuery, podSample, shortId, shortNode, taskLabel } from '../list/rows';
 import { useRefreshInterval } from '../api/refresh';
+import openSandboxMark from '../assets/opensandbox.png';
 import type { ResourceKind, ResourceSummary, UsageResponse } from '../api/client';
 
 interface Props {
@@ -70,8 +71,8 @@ export function ResourceListPage({ kind }: Props) {
   });
 
   // One accessor per column, shared by sorting and value filtering so a column
-  // can never sort by one thing and filter by another. Rebuilt when usage
-  // arrives, which is what lets the CPU and memory columns sort by live load.
+  // can never sort by one thing and filter by another. Every accessor reads the
+  // row itself, so this is built once — nothing here depends on live usage.
   const columnValue = useMemo<Record<string, (it: ResourceSummary) => string | number>>(
     () => ({
       name: (it) => it.name,
@@ -82,11 +83,16 @@ export function ResourceListPage({ kind }: Props) {
       sessionId: (it) => it.sessionId ?? '',
       owner: (it) => it.owner ?? '',
       node: (it) => it.pod?.node ?? '',
-      cpu: (it) => podSample(it, usage.data)?.cpuCores ?? -1,
-      mem: (it) => podSample(it, usage.data)?.memBytes ?? -1,
+      // What the cluster granted, not what is being used. Sorting on live usage
+      // reshuffled the table on every refresh, and collapsed every row
+      // Prometheus had no sample for into one indistinguishable block at the
+      // end. What the pod reserves is the stable number, and it is the one that
+      // answers where the capacity went.
+      cpu: (it) => it.pod?.cpuMillis ?? 0,
+      mem: (it) => it.pod?.memBytes ?? 0,
       age: (it) => it.ageSeconds,
     }),
-    [usage.data],
+    [],
   );
 
   // Value lists come from the whole response, not the filtered rows, so a
@@ -118,7 +124,12 @@ export function ResourceListPage({ kind }: Props) {
       const y = value(b);
       const cmp =
         typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y));
-      return sortDir === 'asc' ? cmp : -cmp;
+      // Ties break on the name, always ascending. Hundreds of rows share a
+      // reservation size, and without a tie-break their order is whatever the
+      // informer listed them in — which is free to change between polls, so
+      // rows would swap places under the cursor every refresh.
+      if (cmp !== 0) return sortDir === 'asc' ? cmp : -cmp;
+      return a.name.localeCompare(b.name);
     });
     return items;
   }, [data, filters, query, sortKey, sortDir, columnValue]);
@@ -357,8 +368,22 @@ export function ResourceListPage({ kind }: Props) {
                 {showOwner && (
                   <ColumnHeader label="Owner" col="owner" sort={sort} filter={filterFor('owner')} />
                 )}
-                {showUsage && <ColumnHeader label="CPU cores" col="cpu" sort={sort} />}
-                {showUsage && <ColumnHeader label="Memory" col="mem" sort={sort} />}
+                {showUsage && (
+                  <ColumnHeader
+                    label="CPU cores"
+                    col="cpu"
+                    hint="Sorts by the cores the pod reserves, not by live use"
+                    sort={sort}
+                  />
+                )}
+                {showUsage && (
+                  <ColumnHeader
+                    label="Memory"
+                    col="mem"
+                    hint="Sorts by the memory the pod reserves, not by live use"
+                    sort={sort}
+                  />
+                )}
                 {showNode && (
                   <ColumnHeader label="Node" col="node" sort={sort} filter={filterFor('node')} />
                 )}
@@ -396,14 +421,7 @@ export function ResourceListPage({ kind }: Props) {
                     )}
                     {showCreator && (
                       <td className="px-3 py-2 text-slate-600">
-                        {it.creator ? (
-                          <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-                            <CreatorIcon creator={it.creator} />
-                            {it.creator}
-                          </span>
-                        ) : (
-                          '—'
-                        )}
+                        <Creator creator={it.creator} />
                       </td>
                     )}
                     {showOwner && (
@@ -495,50 +513,59 @@ function PhasePill({ phase }: { phase: string }) {
 }
 
 /**
- * A glyph for what created the sandbox. Decorative — the name stays next to it,
- * so this is aria-hidden rather than labelled.
+ * What created the sandbox.
  *
- * Two shapes are named because two creators mean something specific: a sandbox
- * the OpenSandbox server made, and one with no creator annotation at all — made
- * directly against the API, usually by a harness. Anything else a fleet reports
- * gets the neutral mark rather than no mark, so a creator nobody here has heard
- * of still renders as a creator.
+ * OpenSandbox gets its mark alone, without the word: in a column where nearly
+ * every row says the same thing, the word is what costs width. The image carries
+ * the accessible name that the text used to — dropping the text without moving
+ * the label onto the `alt` would leave a column of six hundred unnamed pictures.
+ *
+ * A creator with no mark of its own keeps its name in words, which is the useful
+ * asymmetry: the rows that are *not* OpenSandbox are the ones worth noticing.
  */
-function CreatorIcon({ creator }: { creator: string }) {
-  const shape =
-    creator === 'opensandbox' ? (
-      // A box, for the thing that boxes workloads up.
-      <>
-        <path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z" />
-        <path d="M4 7.5l8 4.5 8-4.5" />
-        <path d="M12 12v9" />
-      </>
-    ) : creator === 'unknown' ? (
-      <>
-        <circle cx="12" cy="12" r="9" />
-        <path d="M9.6 9.2a2.5 2.5 0 1 1 3.4 2.4c-.6.3-1 .9-1 1.6v.3" />
-        <path d="M12 17.2h.01" />
-      </>
-    ) : (
-      <>
-        <circle cx="12" cy="12" r="9" />
-        <circle cx="12" cy="12" r="3.5" />
-      </>
+function Creator({ creator }: { creator?: string }) {
+  if (!creator) return <span className="text-slate-400">—</span>;
+  if (creator === 'opensandbox') {
+    return (
+      <img
+        src={openSandboxMark}
+        alt={creator}
+        title={creator}
+        width={32}
+        height={32}
+        className="h-8 w-8"
+      />
     );
+  }
 
   return (
-    <svg
-      aria-hidden
-      viewBox="0 0 24 24"
-      className="h-3.5 w-3.5 shrink-0 text-slate-400"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.6"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      {shape}
-    </svg>
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+      <svg
+        aria-hidden
+        viewBox="0 0 24 24"
+        className="h-3.5 w-3.5 shrink-0 text-slate-400"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        {creator === 'unknown' ? (
+          // No creator annotation: made straight against the API, usually by a harness.
+          <>
+            <circle cx="12" cy="12" r="9" />
+            <path d="M9.6 9.2a2.5 2.5 0 1 1 3.4 2.4c-.6.3-1 .9-1 1.6v.3" />
+            <path d="M12 17.2h.01" />
+          </>
+        ) : (
+          <>
+            <circle cx="12" cy="12" r="9" />
+            <circle cx="12" cy="12" r="3.5" />
+          </>
+        )}
+      </svg>
+      {creator}
+    </span>
   );
 }
 
