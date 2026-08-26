@@ -9,6 +9,7 @@ import {
   type UsageResponse,
 } from '../api/client';
 import { shortId, taskLabel } from '../list/rows';
+import { useRefreshInterval } from '../api/refresh';
 import { Loading } from '../components/Loading';
 import { FleetStrip } from '../components/overview/FleetStrip';
 import {
@@ -38,18 +39,20 @@ import {
 
 export function OverviewPage() {
   const [params, setParams] = useSearchParams();
+  const refetchInterval = useRefreshInterval();
+  const slowRefetch = useRefreshInterval(6);
 
   const counts = useQuery<OverviewResponse>({
     queryKey: ['overview'],
     queryFn: fetchOverview,
-    refetchInterval: 5_000,
+    refetchInterval,
   });
 
   // Same key the sandbox list page uses, so the two share one fetch.
   const fleet = useQuery({
     queryKey: ['list', 'sandboxes', false],
     queryFn: () => fetchList('sandboxes'),
-    refetchInterval: 5_000,
+    refetchInterval,
   });
 
   // Prometheus-backed, so it refreshes on the metrics page's slower cadence and
@@ -57,7 +60,7 @@ export function OverviewPage() {
   const usage = useQuery<UsageResponse>({
     queryKey: ['usage'],
     queryFn: fetchUsage,
-    refetchInterval: 30_000,
+    refetchInterval: slowRefetch,
     retry: false,
   });
 
@@ -99,14 +102,15 @@ export function OverviewPage() {
       reserved: reserved(scope),
       used: used(scope, usage.data),
       triage: alerts(scope),
-      // Same readiness rule the server applies, over the list the rest of this
-      // page is drawn from. Counting from /api/v1/overview instead put
-      // "Ready 19 · Not ready 0" beside a strip flagging one not ready, in one
-      // paint, because they are two independent five-second polls.
-      // From the whole fleet, not the scope: these feed the count cards, which
-      // sit above the filter chip and are what "897 of 906" is measured against.
-      // Mixing a fleet-wide total with filtered parts made the card's own
-      // breakdown fail to add up to its own number.
+      // The same readiness rule the server applies, over the list the rest of
+      // this page is drawn from — not /api/v1/overview, which is a second poll
+      // of the same truth and put "Ready 19 · Not ready 0" beside a strip
+      // flagging one not ready, in one paint.
+      //
+      // Over the whole fleet rather than the scope: these feed the count cards,
+      // which sit above the filter chip and are what "897 of 906" is measured
+      // against. Mixing a fleet-wide total with filtered parts made the card's
+      // own breakdown fail to add up to its own number.
       fleet: items.reduce(
         (acc, it) => {
           if (it.phase === 'Ready') acc.ready += 1;

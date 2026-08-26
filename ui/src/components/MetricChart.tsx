@@ -22,7 +22,7 @@ export function MetricChart({ name, range }: Props) {
   const { data, isLoading, error } = useQuery({
     queryKey: ['metric', name, range],
     queryFn: () => fetchMetric(name, range),
-    refetchInterval: 30_000,
+    refetchInterval: useRefreshInterval(6),
   });
 
   if (isLoading) {

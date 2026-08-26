@@ -11,6 +11,7 @@ import {
   type WarmPoolDetail,
   type OsbView,
 } from '../api/client';
+import { useRefreshInterval } from '../api/refresh';
 import { ConditionsTable } from './ConditionsTable';
 import { Loading } from './Loading';
 import { EventsList } from './EventsList';
@@ -92,7 +93,7 @@ export function DetailDrawer({ kind, namespace, name, listUrl }: Props) {
         namespace,
         name,
       ),
-    refetchInterval: 10_000,
+    refetchInterval: useRefreshInterval(2),
   });
 
   // Overlays the list rather than sitting beside it: the table keeps its full
@@ -246,6 +247,7 @@ function OsbSection({
   /** OpenSandbox's own watch-fed view, from the sandbox's ResourceSummary. */
   osb?: OsbView;
 }) {
+  const detailRefetch = useRefreshInterval(2);
   const { data, isFetching, error, dataUpdatedAt } = useQuery({
     queryKey: ['osb-detail', namespace, name],
     queryFn: () => fetchSandboxOsb(namespace, name),
@@ -253,7 +255,7 @@ function OsbSection({
     // data undefined, which makes react-query reset status to "pending" on every
     // refetch — that would blink a genuine error section out every 10s. It also
     // avoids polling /osb forever for the many sandboxes OpenSandbox never created.
-    refetchInterval: (query) => (query.state.data ? 10_000 : false),
+    refetchInterval: (query) => (query.state.data ? detailRefetch : false),
     retry: false,
   });
 
