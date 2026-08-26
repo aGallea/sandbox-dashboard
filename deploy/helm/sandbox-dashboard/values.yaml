@@ -9,9 +9,10 @@ image:
   tag: ""
   pullPolicy: IfNotPresent
 
-# Needed only while the GHCR package is private.
+# Not needed for the published image, which is public — this is for a private
+# mirror of it.
 imagePullSecrets: []
-#  - name: ghcr-pull
+#  - name: my-registry-pull
 
 nameOverride: ""
 fullnameOverride: ""

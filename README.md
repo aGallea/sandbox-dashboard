@@ -250,21 +250,6 @@ it is read-only, and every cluster already has an opinion about ingress auth. Wr
 existing ingress / IAP / oauth2-proxy stack — `values.yaml` carries commented annotation sets for
 each. Do not put it behind a public LoadBalancer without one.
 
-### Private image
-
-While the GHCR package is private, pulls need an `imagePullSecret`:
-
-```bash
-kubectl create secret docker-registry ghcr-pull \
-  --namespace default \
-  --docker-server=ghcr.io \
-  --docker-username=<your-gh-username> \
-  --docker-password=<a-classic-PAT-with-read:packages>
-
-helm upgrade --install sandbox-dashboard oci://ghcr.io/agallea/charts/sandbox-dashboard \
-  --set imagePullSecrets[0].name=ghcr-pull
-```
-
 ## Development
 
 ```bash
