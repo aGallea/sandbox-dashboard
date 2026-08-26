@@ -6,7 +6,7 @@ import { RESOURCES } from '../resources/config';
 import { DetailDrawer } from '../components/DetailDrawer';
 import { Loading } from '../components/Loading';
 import { ColumnHeader, Pager, type SortDir } from '../components/TableControls';
-import { formatAge, formatBytes } from '../overview/aggregate';
+import { diagnose, formatAge, formatBytes } from '../overview/aggregate';
 import { informative, matchesQuery, podSample, shortId, shortNode, taskLabel } from '../list/rows';
 import { useRefreshInterval } from '../api/refresh';
 import openSandboxMark from '../assets/opensandbox.png';
@@ -441,6 +441,7 @@ export function ResourceListPage({ kind }: Props) {
                         <Load
                           used={podSample(it, usage.data)?.cpuCores}
                           reserved={(it.pod?.cpuMillis ?? 0) / 1000}
+                          running={it.pod?.phase === 'Running'}
                           format={cores}
                         />
                       </td>
@@ -450,6 +451,7 @@ export function ResourceListPage({ kind }: Props) {
                         <Load
                           used={podSample(it, usage.data)?.memBytes}
                           reserved={it.pod?.memBytes ?? 0}
+                          running={it.pod?.phase === 'Running'}
                           format={formatBytes}
                         />
                       </td>
@@ -495,6 +497,22 @@ export function ResourceListPage({ kind }: Props) {
 }
 
 const EMPTY: Set<string> = new Set();
+
+/**
+ * Plain English for the reasons that actually turn up, since the reason alone
+ * does not say whether to wait or to go and look. Anything not listed falls back
+ * to showing the reason as its own tooltip rather than inventing an explanation.
+ */
+const WAITING_HELP: Record<string, string> = {
+  PodInitializing: 'An init container is still running',
+  ContainerCreating: 'Creating the container — this includes pulling the image',
+  ImagePullBackOff: 'The image could not be pulled; kubelet is backing off between retries',
+  ErrImagePull: 'The image pull failed — wrong tag, or no credentials for the registry',
+  InvalidImageName: 'The image reference itself is malformed',
+  CrashLoopBackOff: 'The container keeps exiting and being restarted',
+  CreateContainerConfigError: 'A referenced ConfigMap or Secret is missing',
+  CreateContainerError: 'The container runtime refused to create the container',
+};
 
 /**
  * Cores rather than millicores: a `39m` in a table whose next column reads `1m`
@@ -594,9 +612,34 @@ function SubLine({ it }: { it: ResourceSummary }) {
 function StatusCell({ it, osbConfigured }: { it: ResourceSummary; osbConfigured: boolean }) {
   const osb = osbConfigured ? it.osb : undefined;
   const redundant = it.phase === 'Ready' && osb?.state === 'Running';
+  const { verdict } = diagnose(it);
   return (
     <div>
       <PhasePill phase={it.phase} />
+      {/*
+        Why it is not running yet, which "NotReady" alone never said. A container
+        waiting reason is the closest thing Kubernetes gives to "the image is
+        still coming down" (ContainerCreating) or "it is never coming down"
+        (ImagePullBackOff), and `diagnose` is what decides which of those two
+        this is — so the same rule colours it here and on the fleet strip.
+      */}
+      {it.pod?.waitingReason && (
+        <div
+          className={`mt-0.5 text-xs whitespace-nowrap ${
+            verdict === 'failing' ? 'font-medium text-red-700' : 'text-slate-500'
+          }`}
+          title={WAITING_HELP[it.pod.waitingReason] ?? it.pod.waitingReason}
+        >
+          {it.pod.waitingReason}
+        </div>
+      )}
+      {/* A pod with no node has not been scheduled — a different problem from a
+          pod that cannot start on the node it has. */}
+      {it.pod && !it.pod.node && (
+        <div className="mt-0.5 text-xs text-slate-500" title="No node assigned yet">
+          unscheduled
+        </div>
+      )}
       {/* The reason belongs in the drawer: in a cell it doubles the column width. */}
       {osb && !redundant && (
         <div className="mt-0.5 text-xs text-slate-500 whitespace-nowrap" title={osb.reason}>
@@ -631,27 +674,42 @@ function StatusCell({ it, osbConfigured }: { it: ResourceSummary; osbConfigured:
 function Load({
   used,
   reserved,
+  running,
   format,
 }: {
   used?: number;
   reserved: number;
+  /** Whether the pod is running, which is what makes a missing sample meaningful. */
+  running: boolean;
   format: (n: number) => string;
 }) {
-  const pct = used !== undefined && reserved > 0 ? (used / reserved) * 100 : undefined;
+  // Three different facts, and an em-dash for all of them told you nothing:
+  //   - the pod is not running, so it uses nothing. That is a measurement of
+  //     zero, not a missing one, and it is worth seeing next to what it holds:
+  //     a pending sandbox reserving 16 cores is reserving 16 idle cores.
+  //   - the pod runs but Prometheus has no sample yet — genuinely unknown.
+  //   - there is no pod at all.
+  const value = !running
+    ? { text: format(0), tone: 'text-slate-500', help: 'Not running yet, so nothing is in use' }
+    : used === undefined
+      ? { text: '—', tone: 'text-slate-400', help: 'No Prometheus sample for this pod yet' }
+      : { text: format(used), tone: '', help: undefined };
+
+  const pct = running && used !== undefined && reserved > 0 ? (used / reserved) * 100 : undefined;
   return (
-    <div className="min-w-[7rem]">
+    <div className="min-w-[7rem]" title={value.help}>
       <div>
-        {used === undefined ? <span className="text-slate-400">—</span> : format(used)}
+        <span className={value.tone}>{value.text}</span>
         {reserved > 0 && <span className="text-slate-400"> of {format(reserved)}</span>}
       </div>
-      {pct !== undefined && (
-        <div className="mt-1 h-1 w-20 rounded-full bg-slate-100">
+      <div className="mt-1 h-1 w-20 rounded-full bg-slate-100">
+        {pct !== undefined && (
           <div
             className={`h-1 rounded-full ${pct > 90 ? 'bg-red-400' : 'bg-blue-500'}`}
             style={{ width: `${Math.min(100, Math.max(2, pct))}%` }}
           />
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
