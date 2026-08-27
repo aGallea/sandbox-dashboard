@@ -12,6 +12,18 @@ The 0.4.0 entry below predates that and is hand-written.
 
 ---
 
+## [0.7.0](https://github.com/aGallea/sandbox-dashboard/compare/v0.6.0...v0.7.0) (2026-08-27)
+
+
+### Features
+
+* serve the dashboard under a URL path prefix ([#21](https://github.com/aGallea/sandbox-dashboard/issues/21)) ([e6f70f5](https://github.com/aGallea/sandbox-dashboard/commit/e6f70f539eb0a8158def8edcd1d65fa0bb47e786))
+
+
+### Bug Fixes
+
+* **server:** serve under the base path instead of requiring a proxy to strip it ([#23](https://github.com/aGallea/sandbox-dashboard/issues/23)) ([b8e66a9](https://github.com/aGallea/sandbox-dashboard/commit/b8e66a98bbb12a996720cb08816601d3afc858ec))
+
 ## [0.6.0](https://github.com/aGallea/sandbox-dashboard/compare/v0.5.0...v0.6.0) (2026-08-26)
 
 
