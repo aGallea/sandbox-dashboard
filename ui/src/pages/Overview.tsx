@@ -34,6 +34,8 @@ import {
   podPhases,
   reserved,
   used,
+  valueCounts,
+  valueOf,
   STATUS,
 } from '../overview/aggregate';
 
@@ -83,11 +85,10 @@ export function OverviewPage() {
    */
   const scope = useMemo(
     () =>
-      selected && dimension
-        ? items.filter((it) => (dimension.of(it) || 'unset') === selected)
-        : items,
+      selected && dimension ? items.filter((it) => valueOf(it, dimension) === selected) : items,
     [items, dimension, selected],
   );
+  const values = useMemo(() => (dimension ? valueCounts(items, dimension) : []), [items, dimension]);
 
   const view = useMemo(
     () => ({
@@ -107,11 +108,10 @@ export function OverviewPage() {
       // of the same truth and put "Ready 19 · Not ready 0" beside a strip
       // flagging one not ready, in one paint.
       //
-      // Over the whole fleet rather than the scope: these feed the count cards,
-      // which sit above the filter chip and are what "897 of 906" is measured
-      // against. Mixing a fleet-wide total with filtered parts made the card's
-      // own breakdown fail to add up to its own number.
-      fleet: items.reduce(
+      // Over the scope, like everything else: the card's headline and its own
+      // breakdown come from one list, so they always add up, and the chip below
+      // says what the whole fleet is.
+      fleet: scope.reduce(
         (acc, it) => {
           if (it.phase === 'Ready') acc.ready += 1;
           else if (it.phase === 'NotReady') acc.notReady += 1;
@@ -156,8 +156,54 @@ export function OverviewPage() {
   const data = counts.data;
   const showGpu = view.reserved.gpu > 0;
 
+  const control =
+    'rounded-lg border border-slate-300 bg-white px-2 py-1 text-sm text-slate-900';
+
   return (
     <div className="mx-auto max-w-6xl space-y-4 p-6">
+      {/*
+        One pair of controls for the whole page, above everything they scope:
+        pick how the fleet divides, then which part of it to look at. The group
+        panel further down offers the same choice by clicking a slice, but only
+        for the largest five.
+      */}
+      {dimensions.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-600">
+          <label className="flex items-center gap-2">
+            Group by
+            <select
+              value={dimension?.key}
+              onChange={(e) => setDimension(e.target.value)}
+              className={control}
+            >
+              {dimensions.map((d) => (
+                <option key={d.key} value={d.key}>
+                  {/* Say what a dimension misses before it is picked, not after. */}
+                  {d.label}
+                  {d.covered < items.length ? ` (${d.covered} of ${items.length})` : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-2">
+            Show
+            <select
+              value={selected ?? ''}
+              onChange={(e) => (e.target.value ? toggleValue(e.target.value) : clearValue())}
+              className={control}
+              aria-label={`Which ${dimension?.label.toLowerCase() ?? 'group'} to show`}
+            >
+              <option value="">whole fleet ({items.length})</option>
+              {values.map((v) => (
+                <option key={v.value} value={v.value}>
+                  {v.value} ({v.count})
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {/*
           Counted from the same list every panel below is drawn from, not from
@@ -167,10 +213,10 @@ export function OverviewPage() {
         */}
         <StatCard
           label="Sandboxes"
-          value={items.length}
+          value={scope.length}
           to="/sandboxes"
           parts={
-            items.length
+            scope.length
               ? [
                   { label: 'Ready', value: view.fleet.ready, color: STATUS.ready },
                   { label: 'Not ready', value: view.fleet.notReady, color: STATUS.failed },
@@ -328,28 +374,7 @@ export function OverviewPage() {
         )}
       </Panel>
 
-      {/* One control for every panel it scopes, rather than a selector per card. */}
-      <div className="flex flex-wrap items-baseline justify-between gap-3 pt-2">
-        <h2 className="text-sm font-semibold text-slate-700">How the fleet divides</h2>
-        {dimensions.length > 0 && (
-          <label className="flex items-center gap-2 text-sm text-slate-600">
-            Group by
-            <select
-              value={dimension?.key}
-              onChange={(e) => setDimension(e.target.value)}
-              className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-sm text-slate-900"
-            >
-              {dimensions.map((d) => (
-                <option key={d.key} value={d.key}>
-                  {/* Say what a dimension misses before it is picked, not after. */}
-                  {d.label}
-                  {d.covered < items.length ? ` (${d.covered} of ${items.length})` : ''}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-      </div>
+      <h2 className="pt-2 text-sm font-semibold text-slate-700">How the fleet divides</h2>
 
       <div className="grid items-start gap-4 lg:grid-cols-2">
         <Panel title="Pod status">

@@ -24,8 +24,11 @@ type PodView struct {
 	Node  string `json:"node,omitempty"`
 	// Image is the first container's image, which identifies the workload far
 	// better than the sandbox name does — those are UUIDs in practice.
-	Image    string `json:"image,omitempty"`
-	Restarts int32  `json:"restarts"`
+	Image string `json:"image,omitempty"`
+	// Containers are the regular containers' names, in spec order — what the
+	// logs endpoint accepts as ?container=.
+	Containers []string `json:"containers"`
+	Restarts   int32    `json:"restarts"`
 	// WaitingReason is the first container waiting reason, e.g. CrashLoopBackOff
 	// or ImagePullBackOff. Empty once every container is running.
 	WaitingReason string `json:"waitingReason,omitempty"`
@@ -87,14 +90,16 @@ func podViewFor(index map[types.UID]*corev1.Pod, uid types.UID) *PodView {
 
 func newPodView(pod *corev1.Pod) *PodView {
 	v := &PodView{
-		Name:  pod.Name,
-		Phase: string(pod.Status.Phase),
-		Node:  pod.Spec.NodeName,
+		Name:       pod.Name,
+		Phase:      string(pod.Status.Phase),
+		Node:       pod.Spec.NodeName,
+		Containers: make([]string, 0, len(pod.Spec.Containers)),
 	}
 	if len(pod.Spec.Containers) > 0 {
 		v.Image = pod.Spec.Containers[0].Image
 	}
 	for i := range pod.Spec.Containers {
+		v.Containers = append(v.Containers, pod.Spec.Containers[i].Name)
 		req := pod.Spec.Containers[i].Resources.Requests
 		v.CPUMillis += req.Cpu().MilliValue()
 		v.MemBytes += req.Memory().Value()

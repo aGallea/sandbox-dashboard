@@ -16,6 +16,7 @@ import { ConditionsTable } from './ConditionsTable';
 import { Loading } from './Loading';
 import { EventsList } from './EventsList';
 import { YamlBlock } from './YamlBlock';
+import { PodLogs } from './PodLogs';
 
 interface Props {
   kind: ResourceKind;
@@ -186,6 +187,10 @@ function SandboxBody({
         <h3 className="text-sm font-semibold mb-2">Events</h3>
         <EventsList events={d.events} />
       </section>
+      {d.summary.pod && (
+        // Keyed by pod so a replaced pod resets the container choice with it.
+        <PodLogs key={d.summary.pod.name} namespace={namespace} name={name} pod={d.summary.pod} />
+      )}
       <OsbSection namespace={namespace} name={name} osb={d.summary.osb} />
     </>
   );

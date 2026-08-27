@@ -21,6 +21,7 @@ import {
   stateOf,
   used,
   type Slice,
+  valueCounts,
 } from './aggregate';
 
 /** A Ready sandbox with a Running pod; override only what a case is about. */
@@ -384,4 +385,21 @@ describe('formatting', () => {
 it('keeps the donut group cap above the default groupBy limit', () => {
   // groupBy(…, 5) plus Other must still fit the donut, or a slice goes missing.
   expect(DONUT_MAX).toBeGreaterThanOrEqual(6);
+});
+
+describe('valueCounts', () => {
+  it('lists every value of a dimension, largest first, with the blank folded into unset', () => {
+    const items = [
+      sandbox({ labels: { owner: 'b' } }),
+      sandbox({ labels: { owner: 'a' } }),
+      sandbox({ labels: { owner: 'a' } }),
+      sandbox({}),
+    ];
+    const owner = dimensionsFor(items).find((d) => d.key === 'label:owner')!;
+    expect(valueCounts(items, owner)).toEqual([
+      { value: 'a', count: 2 },
+      { value: 'b', count: 1 },
+      { value: 'unset', count: 1 },
+    ]);
+  });
 });

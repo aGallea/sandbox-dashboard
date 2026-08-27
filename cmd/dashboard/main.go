@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 
@@ -43,6 +44,8 @@ func main() {
 	flag.StringVar(&basePath, "base-path", "", "URL prefix the dashboard is reached at, e.g. /sandbox-dashboard. The proxy in front must strip it; this only tells the browser where to ask for assets and the API. Or AGENT_SANDBOX_DASHBOARD_BASE_PATH.")
 	var watchNamespaces string
 	flag.StringVar(&watchNamespaces, "watch-namespaces", "", "Comma-separated namespaces to watch (e.g. default,team-a). If empty, every namespace — which needs a ClusterRole. Must match the RBAC this install was given; or AGENT_SANDBOX_DASHBOARD_WATCH_NAMESPACES.")
+	var logLevel string
+	flag.StringVar(&logLevel, "log-level", "", "Log level: debug, info, warn or error (default \"info\"; or AGENT_SANDBOX_DASHBOARD_LOG_LEVEL). Probe requests are logged at debug.")
 	flag.Parse()
 
 	listenAddr = resolveListenAddr(listenAddr, os.Getenv("AGENT_SANDBOX_DASHBOARD_LISTEN_ADDR"))
@@ -51,8 +54,12 @@ func main() {
 		basePath = os.Getenv("AGENT_SANDBOX_DASHBOARD_BASE_PATH")
 	}
 
-	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	level, levelErr := resolveLogLevel(logLevel, os.Getenv("AGENT_SANDBOX_DASHBOARD_LOG_LEVEL"))
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
 	ctrl.SetLogger(slogToLogr(logger))
+	if levelErr != nil {
+		logger.Warn("unrecognised log level, using info", "err", levelErr)
+	}
 
 	if promURL == "" {
 		if env := os.Getenv("PROMETHEUS_URL"); env != "" {
@@ -112,6 +119,13 @@ func main() {
 		logger.Error("create manager", "err", err)
 		os.Exit(1)
 	}
+	// Logs are a subresource the informer cache cannot hold, so they go through
+	// a plain clientset. Same credentials as the manager, plus `pods/log` RBAC.
+	clientset, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		logger.Error("create clientset", "err", err)
+		os.Exit(1)
+	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
@@ -146,6 +160,7 @@ func main() {
 	}
 	deps := server.Deps{
 		Client:          mgr.GetClient(),
+		Logs:            server.ClientsetLogs{Interface: clientset},
 		WatchNamespaces: namespaces,
 		BasePath:        basePath,
 		Metrics:         prom.NewRegistry(envOr("AGENT_SANDBOX_DASHBOARD_CONTROLLER_JOB", prom.DefaultControllerJob)),
@@ -257,6 +272,24 @@ func resolveListenAddr(flagValue, envValue string) string {
 		return ":" + addr
 	}
 	return addr
+}
+
+// resolveLogLevel parses the flag (or its env fallback) as a slog level. Info
+// when neither is set; info plus the parse error when the value is not a level,
+// so the process still starts and says why it is not as quiet as asked.
+func resolveLogLevel(flagValue, envValue string) (slog.Level, error) {
+	raw := flagValue
+	if raw == "" {
+		raw = envValue
+	}
+	if raw == "" {
+		return slog.LevelInfo, nil
+	}
+	var level slog.Level
+	if err := level.UnmarshalText([]byte(raw)); err != nil {
+		return slog.LevelInfo, err
+	}
+	return level, nil
 }
 
 // envOr returns the environment value for key, or def when unset or empty.

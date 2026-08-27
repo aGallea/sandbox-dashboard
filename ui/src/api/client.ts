@@ -80,6 +80,8 @@ export interface PodView {
   phase: string;
   node?: string;
   image?: string;
+  /** Regular containers' names in spec order; what the logs endpoint accepts. */
+  containers?: string[];
   restarts: number;
   waitingReason?: string;
   /** Requests summed over the pod's containers — what the cluster reserved. */
@@ -203,6 +205,22 @@ export async function fetchSandboxOsb(
   if (res.status === 404) throw new Error('not-an-opensandbox-sandbox');
   if (!res.ok) throw new Error(`opensandbox detail failed: ${res.status}`);
   return res.json();
+}
+
+/** The pod's raw log lines. Errors carry a slug the UI turns into a sentence. */
+export async function fetchPodLogs(
+  namespace: string,
+  name: string,
+  opts: { from: 'tail' | 'head'; lines: number; container?: string },
+): Promise<string> {
+  const q = new URLSearchParams({ [opts.from]: String(opts.lines) });
+  if (opts.container) q.set('container', opts.container);
+  const res = await fetch(apiUrl(`/api/v1/sandboxes/${namespace}/${name}/logs?${q}`));
+  if (res.status === 404) throw new Error('no-pod');
+  if (res.status === 409) throw new Error('container-not-started');
+  if (res.status === 503) throw new Error('logs-unconfigured');
+  if (!res.ok) throw new Error(`logs failed: ${res.status}`);
+  return res.text();
 }
 
 // ----- live usage ----------------------------------------------------------

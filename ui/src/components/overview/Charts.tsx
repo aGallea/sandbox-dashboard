@@ -54,7 +54,7 @@ export function Donut({
       <div className="flex flex-col items-center justify-center gap-2 py-8 text-center">
         <span className="text-5xl text-slate-900">{slices[0].count}</span>
         <span className="text-sm text-slate-600">
-          all {slices[0].key.toLowerCase()} — one state across the whole fleet
+          all {slices[0].key.toLowerCase()} — one state across every sandbox shown
         </span>
       </div>
     );
@@ -244,51 +244,72 @@ export function FootprintBars({ slices, showGpu }: { slices: Slice[]; showGpu: b
   if (!rows.length) return null;
 
   return (
-    <ul className="space-y-3">
-      {rows.map((row) => {
-        const reservedCores = row.cpuMillis / 1000;
-        const share = row.cpuMillis / widest;
-        const usedShare = reservedCores > 0 ? Math.min(1, row.usedCores / reservedCores) : 0;
-        return (
-          <li key={row.key}>
-            <div className="flex flex-col gap-0.5 text-sm sm:flex-row sm:items-baseline sm:justify-between sm:gap-3">
-              <span className="min-w-0 truncate text-slate-700" title={row.key}>
-                {row.key}
-              </span>
-              <span className="shrink-0 tabular-nums text-slate-500">
-                {haveUsage && (
-                  <>
-                    <strong className="font-semibold text-slate-900">
-                      {formatUsedCores(row.usedCores)}
-                    </strong>{' '}
-                    of{' '}
-                  </>
-                )}
-                <span className={haveUsage ? '' : 'font-semibold text-slate-900'}>
-                  {formatCores(row.cpuMillis)}
-                </span>{' '}
-                cores · {formatBytes(row.memBytes)}
-                {showGpu && row.gpu ? ` · ${row.gpu} GPU` : ''} · {row.count}{' '}
-                {row.count === 1 ? 'sandbox' : 'sandboxes'}
-              </span>
-            </div>
-            <div className="mt-1 h-2.5 w-full rounded-full bg-slate-100">
-              <div
-                className="h-full rounded-full bg-[#9ec5f4]"
-                style={{ width: `${Math.max(share * 100, 1)}%` }}
-              >
-                {haveUsage && (
-                  <div
-                    className="h-full rounded-full bg-[#1c5cab]"
-                    style={{ width: `${Math.max(usedShare * 100, row.usedCores > 0 ? 2 : 0)}%` }}
-                  />
-                )}
+    <div>
+      {/* The bars carry two meanings on one hue, so the legend is what makes
+          them readable; it drops the second swatch when there is nothing to
+          compare against. */}
+      <div className="mb-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
+        <span className="flex items-center gap-1.5">
+          <span aria-hidden className="h-2 w-4 rounded-full bg-[#9ec5f4]" />
+          Reserved CPU — bar length compares the groups; the biggest fills the row
+        </span>
+        {haveUsage ? (
+          <span className="flex items-center gap-1.5">
+            <span aria-hidden className="h-2 w-4 rounded-full bg-[#1c5cab]" />
+            In use now — the part of its own reservation each group is actually using
+          </span>
+        ) : (
+          <span>No Prometheus, so what is in use cannot be shown</span>
+        )}
+      </div>
+      <ul className="space-y-3">
+        {rows.map((row) => {
+          const reservedCores = row.cpuMillis / 1000;
+          const share = row.cpuMillis / widest;
+          const usedShare = reservedCores > 0 ? Math.min(1, row.usedCores / reservedCores) : 0;
+          return (
+            <li key={row.key}>
+              <div className="flex flex-col gap-0.5 text-sm sm:flex-row sm:items-baseline sm:justify-between sm:gap-3">
+                <span className="min-w-0 truncate text-slate-700" title={row.key}>
+                  {row.key}
+                </span>
+                <span className="shrink-0 tabular-nums text-slate-500">
+                  {haveUsage && (
+                    <>
+                      <strong className="font-semibold text-slate-900">
+                        {formatUsedCores(row.usedCores)}
+                      </strong>{' '}
+                      of{' '}
+                    </>
+                  )}
+                  <span className={haveUsage ? '' : 'font-semibold text-slate-900'}>
+                    {formatCores(row.cpuMillis)}
+                  </span>{' '}
+                  cores · {formatBytes(row.memBytes)}
+                  {showGpu && row.gpu ? ` · ${row.gpu} GPU` : ''} · {row.count}{' '}
+                  {row.count === 1 ? 'sandbox' : 'sandboxes'}
+                </span>
               </div>
-            </div>
-          </li>
-        );
-      })}
-    </ul>
+              <div className="mt-1 h-2.5 w-full rounded-full bg-slate-100">
+                <div
+                  className="h-full rounded-full bg-[#9ec5f4]"
+                  style={{ width: `${Math.max(share * 100, 1)}%` }}
+                  title={`${formatCores(row.cpuMillis)} cores reserved (the biggest group reserves ${formatCores(widest)})`}
+                >
+                  {haveUsage && (
+                    <div
+                      className="h-full rounded-full bg-[#1c5cab]"
+                      style={{ width: `${Math.max(usedShare * 100, row.usedCores > 0 ? 2 : 0)}%` }}
+                      title={`${formatUsedCores(row.usedCores)} of ${formatCores(row.cpuMillis)} reserved cores in use (${Math.round(usedShare * 100)}%)`}
+                    />
+                  )}
+                </div>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
 

@@ -161,8 +161,10 @@ function FilterMenu({
                 checked={selected.has(value)}
                 onChange={() => onToggle(col, value)}
               />
-              <span className="truncate" title={value}>
-                {value}
+              {/* The empty value is a real choice: "no owner" is what you filter by
+                  when hunting for sandboxes nobody has claimed. */}
+              <span className={value ? 'truncate' : 'italic text-slate-400'} title={value}>
+                {value || '(none)'}
               </span>
             </label>
           ))}

@@ -13,7 +13,7 @@ import { useSyncExternalStore } from 'react';
  */
 const KEY = 'refreshMs';
 
-export const DEFAULT_REFRESH_MS = 5_000;
+export const DEFAULT_REFRESH_MS = 15_000;
 
 /** Off is a real choice: reading a page while the fleet churns needs it to hold still. */
 export const REFRESH_OPTIONS = [

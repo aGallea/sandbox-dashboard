@@ -38,6 +38,9 @@ type Deps struct {
 	// Osb is the optional OpenSandbox client. If nil, sandbox rows carry no
 	// OpenSandbox state and the list response omits its osb block.
 	Osb OsbClient
+	// Logs reads pod logs straight from the API server. If nil,
+	// /api/v1/sandboxes/{ns}/{name}/logs returns 503.
+	Logs PodLogStreamer
 	// WatchNamespaces is the namespace scope the informers were given. Empty
 	// means every namespace. Reported on /api/v1/overview so the UI can say that
 	// a narrowed install is showing a partial fleet.
@@ -142,6 +145,7 @@ func New(d Deps) http.Handler {
 			r.Get("/sandboxes", handleSandboxList(d))
 			r.Get("/sandboxes/{namespace}/{name}", handleSandboxDetail(d))
 			r.Get("/sandboxes/{namespace}/{name}/osb", handleSandboxOsb(d))
+			r.Get("/sandboxes/{namespace}/{name}/logs", handleSandboxLogs(d))
 			r.Get("/claims", handleClaimList(d))
 			r.Get("/claims/{namespace}/{name}", handleClaimDetail(d))
 			r.Get("/templates", handleTemplateList(d))
@@ -260,7 +264,13 @@ func slogRequestMiddleware(logger *slog.Logger) func(http.Handler) http.Handler 
 			start := time.Now()
 			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 			next.ServeHTTP(ww, r)
-			logger.Info("http",
+			// The kubelet probes every few seconds; at info those lines are most
+			// of the log and say nothing anyone came to read.
+			level := slog.LevelInfo
+			if r.URL.Path == "/healthz" || r.URL.Path == "/readyz" {
+				level = slog.LevelDebug
+			}
+			logger.Log(r.Context(), level, "http",
 				"method", r.Method,
 				"path", r.URL.Path,
 				"status", ww.Status(),

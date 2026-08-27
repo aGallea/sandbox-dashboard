@@ -96,19 +96,19 @@ export function ResourceListPage({ kind }: Props) {
   );
 
   // Value lists come from the whole response, not the filtered rows, so a
-  // selection never removes the options next to it.
+  // selection never removes the options next to it. The empty value is kept:
+  // it is how "no owner" and "not scheduled" become filterable, and it sorts
+  // first so the menu shows it as "(none)" at the top.
   const options = useMemo(() => {
     const byColumn: Record<string, string[]> = {};
     FILTERABLE.forEach((col) => {
       const seen = new Set<string>();
-      data?.items.forEach((it) => {
-        const value = String(columnValue[col](it) ?? '');
-        if (value) seen.add(value);
-      });
+      data?.items.forEach((it) => seen.add(String(columnValue[col](it) ?? '')));
       byColumn[col] = Array.from(seen).sort();
     });
     return byColumn;
   }, [data, columnValue]);
+  const hasValues = (col: string) => options[col]?.some(Boolean) ?? false;
 
   const rows = useMemo(() => {
     const value = columnValue[sortKey] ?? columnValue.age;
@@ -147,14 +147,14 @@ export function ResourceListPage({ kind }: Props) {
   // some workloads; a column of nothing but em-dashes is worse than no column.
   // One owner across the whole fleet is still worth a column — unlike the
   // columns below, nothing else on the row says who it belongs to.
-  const showOwner = cfg.showOsb && options.owner?.length > 0;
+  const showOwner = cfg.showOsb && hasValues('owner');
 
   // A column whose every row says `default` costs width and teaches nothing.
   // Both come back on their own once the fleet spans more than one value.
   const items = data?.items ?? [];
   const showNamespace = informative(items, (it) => it.namespace);
   const showCreator = cfg.showOsb && informative(items, (it) => it.creator ?? '');
-  const showNode = cfg.showOsb && options.node?.length > 0;
+  const showNode = cfg.showOsb && hasValues('node');
 
   // Live usage needs Prometheus. Gated on the query succeeding rather than on a
   // configuration flag, so the columns are present exactly when they have values.
