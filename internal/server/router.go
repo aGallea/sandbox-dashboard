@@ -157,6 +157,7 @@ func New(d Deps) http.Handler {
 		r.Handle("/assets/*", fileServer)
 		r.Handle("/favicon.ico", fileServer)
 		r.Handle("/favicon.svg", fileServer)
+		r.Handle("/apple-touch-icon.png", fileServer)
 	}
 
 	// Single source of truth for unmatched paths:
