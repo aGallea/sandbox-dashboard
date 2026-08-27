@@ -235,18 +235,26 @@ export function groupBy(
     totals.set(key, slice);
   });
 
-  const ranked = Array.from(totals.values()).sort((a, b) => b.count - a.count);
+  // Ties break on the key, never on arrival order. The informer does not promise
+  // an order, so equal groups would otherwise swap places on every poll — which
+  // on a fleet grouped by node is most of them, all reading the same 3%.
+  const ranked = Array.from(totals.values()).sort(
+    (a, b) => b.count - a.count || a.key.localeCompare(b.key),
+  );
   const kept = ranked.slice(0, limit);
   const tail = ranked.slice(limit);
 
-  const hueOf = new Map(
-    kept
-      .map((s) => s.key)
-      .sort()
-      .map((key, i) => [key, SERIES[i % SERIES.length]]),
-  );
-  kept.forEach((s) => {
-    s.color = hueOf.get(s.key) ?? OTHER_COLOR;
+  // Hue follows rank, so the same fleet always paints the same way.
+  //
+  // Pinning a hue to the group name reads better — a reader learns "orange is
+  // that node" — but SERIES holds five hues and the limit keeps five groups, so
+  // with a full list the assignment is a bijection: any group entering the top
+  // five has to displace another one's colour. That is what made the previous
+  // version repaint all five slices whenever membership changed. Ranking is
+  // deterministic now, so in practice a hue only moves when the ranking really
+  // does.
+  kept.forEach((s, i) => {
+    s.color = SERIES[i % SERIES.length];
   });
 
   if (!tail.length) return kept;

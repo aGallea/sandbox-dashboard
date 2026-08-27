@@ -39,12 +39,17 @@ func main() {
 	flag.StringVar(&promURL, "prometheus-url", "", "Optional Prometheus base URL (e.g. http://prometheus.monitoring.svc:9090). If empty, /api/v1/metrics/* returns 503.")
 	var osbURL string
 	flag.StringVar(&osbURL, "opensandbox-url", "", "Optional OpenSandbox base URL (e.g. http://opensandbox-server.default.svc). If empty, sandbox rows carry no OpenSandbox state.")
+	var basePath string
+	flag.StringVar(&basePath, "base-path", "", "URL prefix the dashboard is reached at, e.g. /sandbox-dashboard. The proxy in front must strip it; this only tells the browser where to ask for assets and the API. Or AGENT_SANDBOX_DASHBOARD_BASE_PATH.")
 	var watchNamespaces string
 	flag.StringVar(&watchNamespaces, "watch-namespaces", "", "Comma-separated namespaces to watch (e.g. default,team-a). If empty, every namespace — which needs a ClusterRole. Must match the RBAC this install was given; or AGENT_SANDBOX_DASHBOARD_WATCH_NAMESPACES.")
 	flag.Parse()
 
 	listenAddr = resolveListenAddr(listenAddr, os.Getenv("AGENT_SANDBOX_DASHBOARD_LISTEN_ADDR"))
 	namespaces := resolveWatchNamespaces(watchNamespaces, os.Getenv("AGENT_SANDBOX_DASHBOARD_WATCH_NAMESPACES"))
+	if basePath == "" {
+		basePath = os.Getenv("AGENT_SANDBOX_DASHBOARD_BASE_PATH")
+	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	ctrl.SetLogger(slogToLogr(logger))
@@ -142,6 +147,7 @@ func main() {
 	deps := server.Deps{
 		Client:          mgr.GetClient(),
 		WatchNamespaces: namespaces,
+		BasePath:        basePath,
 		Metrics:         prom.NewRegistry(envOr("AGENT_SANDBOX_DASHBOARD_CONTROLLER_JOB", prom.DefaultControllerJob)),
 		CacheSynced:     cacheSynced.Load,
 		UIAssets:        assets,
