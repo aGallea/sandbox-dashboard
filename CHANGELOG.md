@@ -12,6 +12,13 @@ The 0.4.0 entry below predates that and is hand-written.
 
 ---
 
+## [0.8.0](https://github.com/aGallea/sandbox-dashboard/compare/v0.7.0...v0.8.0) (2026-08-27)
+
+
+### Features
+
+* pod log viewer, no-owner filter, and a page-level scope for the overview ([#24](https://github.com/aGallea/sandbox-dashboard/issues/24)) ([1ebae36](https://github.com/aGallea/sandbox-dashboard/commit/1ebae36dc7947d3503469fce42c1db660e90fe4d))
+
 ## [0.7.0](https://github.com/aGallea/sandbox-dashboard/compare/v0.6.0...v0.7.0) (2026-08-27)
 
 
