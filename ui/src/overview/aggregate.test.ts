@@ -4,6 +4,7 @@ import type { ResourceSummary, UsageResponse } from '../api/client';
 import {
   DONUT_MAX,
   OTHER_KEY,
+  SERIES,
   STARTUP_GRACE_SECONDS,
   ageBuckets,
   alerts,
@@ -19,6 +20,7 @@ import {
   shortImage,
   stateOf,
   used,
+  type Slice,
 } from './aggregate';
 
 /** A Ready sandbox with a Running pod; override only what a case is about. */
@@ -94,7 +96,42 @@ describe('groupBy', () => {
     expect(slices[2]).toMatchObject({ key: OTHER_KEY, count: 2 });
   });
 
-  it('assigns colours by name so a refresh cannot repaint a group the reader knows', () => {
+  // The overview polls every few seconds. Anything that reorders equal groups or
+  // moves a hue between them shows up as flicker — measured on a live fleet
+  // grouped by node, ten recolourings in eight polls, with every row otherwise
+  // unchanged.
+  describe('is stable across a refresh that changes nothing the reader can see', () => {
+    it('breaks count ties on the key, so equal groups cannot swap places', () => {
+      const fleet = ['b', 'a', 'c'].map((team) => sandbox({ team }));
+      const order = (items: ResourceSummary[]) => groupBy(items, dim).map((s) => s.key);
+
+      expect(order(fleet)).toEqual(['a', 'b', 'c']);
+      // Same fleet, different arrival order — the informer does not promise one.
+      expect(order([...fleet].reverse())).toEqual(['a', 'b', 'c']);
+    });
+
+    it('keeps a group its colour when a smaller group joins below it', () => {
+      const before = groupBy([sandbox({ team: 'a' }), sandbox({ team: 'a' })], dim);
+      const after = groupBy(
+        [sandbox({ team: 'a' }), sandbox({ team: 'a' }), sandbox({ team: 'b' })],
+        dim,
+      );
+      const colourOf = (slices: Slice[], key: string) => slices.find((s) => s.key === key)?.color;
+
+      expect(colourOf(after, 'a')).toBe(colourOf(before, 'a'));
+    });
+
+    // SERIES holds five hues and the limit keeps five groups, so colour cannot
+    // also be pinned to the name — with a full list any membership change would
+    // force a reshuffle. Rank is what the reader is looking at, so rank wins.
+    it('gives the largest group the first hue, whatever it is called', () => {
+      const zed = groupBy([sandbox({ team: 'z' }), sandbox({ team: 'z' }), sandbox({ team: 'a' })], dim);
+      expect(zed[0]).toMatchObject({ key: 'z', color: SERIES[0] });
+      expect(zed[1]).toMatchObject({ key: 'a', color: SERIES[1] });
+    });
+  });
+
+  it('assigns colours by rank so the same fleet always paints the same way', () => {
     const many = [sandbox({ team: 'a' }), sandbox({ team: 'a' }), sandbox({ team: 'b' })];
     const byCount = groupBy(many, dim);
     // Same fleet, opposite arrival order: 'b' now leads on count.
