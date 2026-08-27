@@ -179,7 +179,26 @@ func New(d Deps) http.Handler {
 		http.NotFound(w, req)
 	})
 
-	return r
+	base := normaliseBasePath(d.BasePath)
+	if base == "" {
+		return r
+	}
+
+	// Mounted under the prefix, so the proxy in front forwards the path
+	// unchanged and needs no rewriting middleware — the app owns its prefix.
+	//
+	// StripPrefix rather than chi's Mount alone: Mount rewrites the routing path
+	// but leaves URL.Path, and http.FileServer reads URL.Path, so the assets
+	// would be looked up as "/sandbox-dashboard/assets/x" inside the embedded FS
+	// and 404.
+	outer := chi.NewRouter()
+	// Probes stay at the root. The kubelet talks to the container port directly,
+	// not through the proxy that adds the prefix.
+	outer.Handle("/healthz", r)
+	outer.Handle("/readyz", r)
+	outer.Handle(base, http.RedirectHandler(base+"/", http.StatusMovedPermanently))
+	outer.Handle(base+"/*", http.StripPrefix(base, r))
+	return outer
 }
 
 // normaliseBasePath turns whatever was configured into either "" (the domain
