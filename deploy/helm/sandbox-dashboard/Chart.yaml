@@ -4,8 +4,8 @@ description: Read-only operational dashboard for kubernetes-sigs/agent-sandbox
 type: application
 # version is the chart's own version; appVersion tracks the dashboard release.
 # Both are owned by release-please — bump them by merging its release PR, never by hand.
-version: 0.7.0 # x-release-please-version
-appVersion: "0.7.0" # x-release-please-version
+version: 0.8.0 # x-release-please-version
+appVersion: "0.8.0" # x-release-please-version
 kubeVersion: ">=1.27.0-0"
 home: https://github.com/aGallea/sandbox-dashboard
 sources:
