@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"log/slog"
+	"testing"
+)
 
 // The chart sets the port through the environment so a single value can drive
 // both the container port and the probes. A flag still wins, so an operator
@@ -56,6 +59,30 @@ func TestResolveWatchNamespaces(t *testing.T) {
 				if got[i] != tc.want[i] {
 					t.Errorf("resolveWatchNamespaces(%q, %q)[%d] = %q, want %q", tc.flag, tc.env, i, got[i], tc.want[i])
 				}
+			}
+		})
+	}
+}
+
+func TestResolveLogLevel(t *testing.T) {
+	tests := []struct {
+		name, flag, env string
+		want            slog.Level
+		wantErr         bool
+	}{
+		{"default is info", "", "", slog.LevelInfo, false},
+		{"flag wins", "debug", "error", slog.LevelDebug, false},
+		{"env fallback", "", "WARN", slog.LevelWarn, false},
+		{"garbage falls back to info and says so", "loud", "", slog.LevelInfo, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := resolveLogLevel(tc.flag, tc.env)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("err = %v, wantErr %v", err, tc.wantErr)
+			}
+			if got != tc.want {
+				t.Fatalf("got %v, want %v", got, tc.want)
 			}
 		})
 	}

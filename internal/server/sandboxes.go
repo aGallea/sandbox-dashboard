@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -320,8 +321,61 @@ func handleSandboxOsb(d Deps) http.HandlerFunc {
 			})
 			return
 		}
-		writeJSON(w, http.StatusOK, SandboxOsbDetail{ID: id, Summary: diag.Summary, Events: diag.Events})
+		writeJSON(w, http.StatusOK, SandboxOsbDetail{ID: id, Summary: stripSections(diag.Summary, "LOGS", "EVENTS"), Events: diag.Events})
 	}
+}
+
+// stripSections drops the sections of OpenSandbox's summary whose title starts
+// with one of the given prefixes. The drawer already shows logs through its own
+// sizeable tail and events from the separate events route, so the summary's
+// fixed copies of both were the same text a second time — and most of it.
+//
+// The summary is plain text whose sections are a title between two dashed
+// rules. A section runs from its rule to the next one, or to the end.
+func stripSections(summary string, prefixes ...string) string {
+	lines := strings.Split(summary, "\n")
+	isRule := func(i int) bool {
+		return i < len(lines) && len(lines[i]) >= 4 && strings.Trim(lines[i], "-") == ""
+	}
+	// headerAt reports whether a section header starts at i, and its title.
+	headerAt := func(i int) (string, bool) {
+		if isRule(i) && i+2 < len(lines) && isRule(i+2) && strings.TrimSpace(lines[i+1]) != "" {
+			return strings.TrimSpace(lines[i+1]), true
+		}
+		return "", false
+	}
+
+	out := make([]string, 0, len(lines))
+	for i := 0; i < len(lines); {
+		title, ok := headerAt(i)
+		if !ok || !hasAnyPrefix(strings.ToUpper(title), prefixes) {
+			out = append(out, lines[i])
+			i++
+			continue
+		}
+		// Skip the header and every line up to the next header.
+		for i += 3; i < len(lines); i++ {
+			if _, next := headerAt(i); next {
+				break
+			}
+		}
+	}
+	// Blank lines that separated a dropped section collapse into the section
+	// gap that remains; the input's own ending is kept as it was.
+	joined := strings.TrimRight(strings.Join(out, "\n"), "\n")
+	if strings.HasSuffix(summary, "\n") {
+		joined += "\n"
+	}
+	return joined
+}
+
+func hasAnyPrefix(s string, prefixes []string) bool {
+	for _, p := range prefixes {
+		if strings.HasPrefix(s, p) {
+			return true
+		}
+	}
+	return false
 }
 
 // writeJSON writes v as JSON with Content-Type set.

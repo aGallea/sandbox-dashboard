@@ -78,6 +78,6 @@ a published artifact and readers of it should see why there are no write verbs.
   resources: ["sandboxtemplates", "sandboxclaims", "sandboxwarmpools"]
   verbs: ["get", "list", "watch"]
 - apiGroups: [""]
-  resources: ["pods", "events"]
+  resources: ["pods", "pods/log", "events"]
   verbs: ["get", "list", "watch"]
 {{- end }}

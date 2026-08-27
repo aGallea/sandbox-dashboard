@@ -120,6 +120,7 @@ HTTP surface:
 | `/api/v1/{sandboxes,claims,templates,warmpools}` | read-only JSON, one row per resource |
 | `/api/v1/sandboxes/{namespace}/{name}` | detail, conditions, spec, events |
 | `/api/v1/sandboxes/{namespace}/{name}/osb` | OpenSandbox diagnostics for one sandbox |
+| `/api/v1/sandboxes/{namespace}/{name}/logs` | the pod's log lines as plain text; `?tail=N`, `?head=N`, `?container=` |
 | `/api/v1/metrics` | the chart catalog |
 | `/api/v1/metrics/{name}` | whitelisted Prometheus proxy — the SPA never sends PromQL |
 | `/api/v1/usage` | live CPU/memory per sandbox pod, keyed `namespace/pod` |
@@ -133,6 +134,7 @@ binary all configure it the same way. Four also have flags, which win over the e
 |---|---|---|---|
 | `AGENT_SANDBOX_DASHBOARD_LISTEN_ADDR` | `--listen-addr` | `:8080` | Bind address. A bare port is accepted. |
 | `AGENT_SANDBOX_DASHBOARD_WATCH_NAMESPACES` | `--watch-namespaces` | every namespace | Comma-separated namespaces to watch. See [Scope](#scope). |
+| `AGENT_SANDBOX_DASHBOARD_LOG_LEVEL` | `--log-level` | `info` | `debug`, `info`, `warn` or `error`. Probe requests (`/healthz`, `/readyz`) are logged at `debug`. |
 | `PROMETHEUS_URL` | `--prometheus-url` | unset | Base URL. Unset disables the metrics page and the usage panels. |
 | `OPENSANDBOX_URL` | `--opensandbox-url` | unset | Base URL. Unset disables the OpenSandbox fields. |
 | `OPENSANDBOX_API_KEY` | — | unset | Sent as the `OPEN-SANDBOX-API-KEY` header. Env-only, so it can come from a Secret. |
@@ -146,7 +148,7 @@ binary all configure it the same way. Four also have flags, which win over the e
 ### Scope
 
 By default the dashboard watches every namespace, which needs a ClusterRole — and that grants
-`get`/`list`/`watch` on **pods and events cluster-wide**. On a shared cluster it can read every
+`get`/`list`/`watch` on **pods and events cluster-wide**, plus `get` on `pods/log` for the log viewer. On a shared cluster it can read every
 pod spec in every namespace.
 
 If sandboxes live in known namespaces, say so and it reads only those:

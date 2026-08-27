@@ -75,7 +75,7 @@ means anyone who can reach the host can read it, and `NOTES.txt` says so on inst
 ## Narrowing the scope
 
 By default the dashboard watches every namespace, which needs a ClusterRole — and
-that grants `get`/`list`/`watch` on **pods and events cluster-wide**. On a shared
+that grants `get`/`list`/`watch` on **pods and events cluster-wide**, plus `get` on `pods/log` for the log viewer. On a shared
 cluster that means it can read every pod spec in every namespace.
 
 If sandboxes live in known namespaces, list them:

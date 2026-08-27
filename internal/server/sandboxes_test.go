@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -586,4 +587,42 @@ func TestSandboxes_List_OmitsSessionIDWhenLabelAbsent(t *testing.T) {
 		ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/sandboxes", nil))
 
 	require.NotContains(t, rec.Body.String(), "sessionId", "the key must be omitted, not empty")
+}
+
+func TestStripSections_DropsTheNamedSectionsAndKeepsTheRest(t *testing.T) {
+	rule := "----------------------------------------"
+	summary := strings.Join([]string{
+		"SANDBOX DIAGNOSTICS SUMMARY",
+		"",
+		rule, "INSPECT", rule,
+		"Pod Name:       sandbox-a",
+		"",
+		rule, "LOGS (last 50 lines)", rule,
+		`2026-08-27T10:50:04Z {"level":"info","msg":"one"}`,
+		`2026-08-27T10:50:05Z {"level":"info","msg":"two"}`,
+		"",
+		rule, "EVENTS", rule,
+		"[2026-08-27] Normal Scheduled",
+		"",
+		rule, "LOGS (previous)", rule,
+		"old line",
+		"",
+	}, "\n")
+
+	want := strings.Join([]string{
+		"SANDBOX DIAGNOSTICS SUMMARY",
+		"",
+		rule, "INSPECT", rule,
+		"Pod Name:       sandbox-a",
+		"",
+	}, "\n")
+	require.Equal(t, want, stripSections(summary, "LOGS", "EVENTS"))
+}
+
+func TestStripSections_LeavesASummaryWithoutThemAlone(t *testing.T) {
+	summary := "----\nINSPECT\n----\nPod Name: a\n"
+	require.Equal(t, summary, stripSections(summary, "LOGS", "EVENTS"))
+	// A line that merely mentions LOGS or EVENTS is not a header.
+	summary = "----\nINSPECT\n----\nmsg: LOGS rotated, EVENTS flushed\n"
+	require.Equal(t, summary, stripSections(summary, "LOGS", "EVENTS"))
 }

@@ -206,6 +206,26 @@ export interface Slice {
   color: string;
 }
 
+/** The value a sandbox has for a dimension, with the blank folded into one bucket. */
+export const UNSET = 'unset';
+export const valueOf = (it: ResourceSummary, d: DimensionSpec) => d.of(it) || UNSET;
+
+/**
+ * Every value a dimension takes across the fleet with its count, largest first.
+ * The full list, unlike groupBy's top five: a scope picker has to offer the
+ * owner with two sandboxes as readily as the one with two hundred.
+ */
+export function valueCounts(items: ResourceSummary[], d: DimensionSpec): { value: string; count: number }[] {
+  const counts = new Map<string, number>();
+  items.forEach((it) => {
+    const v = valueOf(it, d);
+    counts.set(v, (counts.get(v) ?? 0) + 1);
+  });
+  return Array.from(counts, ([value, count]) => ({ value, count })).sort(
+    (a, b) => b.count - a.count || a.value.localeCompare(b.value),
+  );
+}
+
 /**
  * Groups the fleet along one dimension, keeping the largest `limit` groups and
  * folding the rest into a single Other.
