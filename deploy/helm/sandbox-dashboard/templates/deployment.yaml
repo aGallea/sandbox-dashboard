@@ -51,6 +51,12 @@ spec:
             - name: AGENT_SANDBOX_DASHBOARD_WATCH_NAMESPACES
               value: {{ join "," . | quote }}
             {{- end }}
+            {{- with .Values.basePath }}
+            # Only tells the browser where to ask; the server still serves at /,
+            # so whatever proxies this must strip the prefix.
+            - name: AGENT_SANDBOX_DASHBOARD_BASE_PATH
+              value: {{ . | quote }}
+            {{- end }}
             {{- if .Values.prometheus.url }}
             - name: PROMETHEUS_URL
               value: {{ .Values.prometheus.url | quote }}

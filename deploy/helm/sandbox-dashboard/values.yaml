@@ -48,6 +48,15 @@ service:
   port: 80
   annotations: {}
 
+# URL prefix the dashboard is reached at, e.g. /sandbox-dashboard. Empty means
+# the domain root.
+#
+# One published image serves any prefix: the server writes this into index.html
+# and the SPA asks for its assets and its API under it. The server itself keeps
+# serving at "/", so whatever proxies to it must strip the prefix — a traefik
+# StripPrefix middleware, an nginx-ingress rewrite-target, and so on.
+basePath: ""
+
 # The port the container listens on. One value drives the container port, the
 # probes and the address the binary binds, so they cannot disagree.
 listenPort: 8080

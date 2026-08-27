@@ -214,6 +214,10 @@
     "extraEnv": {
       "type": "array"
     },
+    "basePath": {
+      "type": "string",
+      "description": "URL prefix the dashboard is served under, e.g. /sandbox-dashboard. Empty means the domain root. The proxy in front must strip it."
+    },
     "resources": {
       "type": "object"
     },

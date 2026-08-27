@@ -1,3 +1,4 @@
+import { apiUrl } from './basePath';
 export interface ResourceCounts {
   total: number;
   ready: number;
@@ -25,7 +26,7 @@ export interface OverviewResponse {
 }
 
 export async function fetchOverview(): Promise<OverviewResponse> {
-  const res = await fetch('/api/v1/overview');
+  const res = await fetch(apiUrl('/api/v1/overview'));
   if (!res.ok) {
     throw new Error(`overview failed: ${res.status} ${res.statusText}`);
   }
@@ -180,14 +181,14 @@ export async function fetchList(
   if (params.osbState) q.set('osbState', params.osbState);
   if (params.stale) q.set('stale', 'true');
   const qs = q.toString();
-  const url = `/api/v1/${kind}${qs ? `?${qs}` : ''}`;
+  const url = apiUrl(`/api/v1/${kind}${qs ? `?${qs}` : ''}`);
   const res = await fetch(url);
   if (!res.ok) throw new Error(`${kind} list failed: ${res.status}`);
   return res.json();
 }
 
 export async function fetchDetail<T>(kind: ResourceKind, namespace: string, name: string): Promise<T> {
-  const res = await fetch(`/api/v1/${kind}/${namespace}/${name}`);
+  const res = await fetch(apiUrl(`/api/v1/${kind}/${namespace}/${name}`));
   if (res.status === 404) throw new Error('not-found');
   if (!res.ok) throw new Error(`${kind} detail failed: ${res.status}`);
   return res.json();
@@ -197,7 +198,7 @@ export async function fetchSandboxOsb(
   namespace: string,
   name: string,
 ): Promise<SandboxOsbDetail> {
-  const res = await fetch(`/api/v1/sandboxes/${namespace}/${name}/osb`);
+  const res = await fetch(apiUrl(`/api/v1/sandboxes/${namespace}/${name}/osb`));
   if (res.status === 503) throw new Error('opensandbox-unconfigured');
   if (res.status === 404) throw new Error('not-an-opensandbox-sandbox');
   if (!res.ok) throw new Error(`opensandbox detail failed: ${res.status}`);
@@ -218,7 +219,7 @@ export interface UsageResponse {
 }
 
 export async function fetchUsage(): Promise<UsageResponse> {
-  const res = await fetch('/api/v1/usage');
+  const res = await fetch(apiUrl('/api/v1/usage'));
   if (res.status === 503) throw new Error('prometheus-unconfigured');
   if (!res.ok) throw new Error(`usage failed: ${res.status}`);
   return res.json();
@@ -268,13 +269,13 @@ export interface MetricCatalog {
 
 /** The charts this install offers, grouped for display. Served without Prometheus. */
 export async function fetchMetricCatalog(): Promise<MetricCatalog> {
-  const res = await fetch('/api/v1/metrics');
+  const res = await fetch(apiUrl('/api/v1/metrics'));
   if (!res.ok) throw new Error(`metric catalog failed: ${res.status}`);
   return res.json();
 }
 
 export async function fetchMetric(name: string, range: MetricRange = '1h'): Promise<MetricResponse> {
-  const res = await fetch(`/api/v1/metrics/${encodeURIComponent(name)}?range=${range}`);
+  const res = await fetch(apiUrl(`/api/v1/metrics/${encodeURIComponent(name)}?range=${range}`));
   if (res.status === 503) throw new Error('prometheus-unconfigured');
   if (!res.ok) throw new Error(`metric ${name} failed: ${res.status}`);
   return res.json();
