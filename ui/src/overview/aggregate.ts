@@ -75,6 +75,12 @@ export interface DimensionSpec {
   key: string;
   label: string;
   of: (it: ResourceSummary) => string;
+  /**
+   * Keeps the dimension on offer when the whole fleet shares one value. Only
+   * for the ones that name who a sandbox belongs to: a single-slice ring still
+   * answers "whose fleet is this", which nothing else on the page does.
+   */
+  keepSingle?: boolean;
 }
 
 export interface Dimension extends DimensionSpec {
@@ -86,6 +92,13 @@ export interface Dimension extends DimensionSpec {
 
 /** Marks a dimension as one the fleet stamps rather than one we derived. */
 const LABEL_PREFIX = 'label:';
+
+/**
+ * The label keys the server folds into `owner` (see identityFor in
+ * internal/server/summaries.go). They are dropped from the discovered label
+ * dimensions so the picker offers one "Owner", not that plus a raw key.
+ */
+export const OWNER_LABELS = ['ai21.com/owner', 'owner'];
 
 const INTRINSIC: DimensionSpec[] = [
   { key: 'image', label: 'Image', of: (it) => shortImage(it.pod?.image) },
@@ -100,6 +113,7 @@ const INTRINSIC: DimensionSpec[] = [
   { key: 'readiness', label: 'Readiness', of: (it) => STATE_LABEL[stateOf(it)] },
   { key: 'osbState', label: 'OSB state', of: (it) => it.osb?.state ?? '' },
   { key: 'creator', label: 'Creator', of: (it) => it.creator ?? '' },
+  { key: 'owner', label: 'Owner', of: (it) => it.owner ?? '', keepSingle: true },
 ];
 
 /**
@@ -111,7 +125,8 @@ const INTRINSIC: DimensionSpec[] = [
  * algo-studio it drops all three labels the sandboxes carry (`session_id` and
  * `opensandbox.io/id` are unique per sandbox, `policy.ai21.com/preemptible` has
  * one value) and keeps image, node and size, while a fleet that stamps `team=`
- * gets a Team dimension with no configuration.
+ * gets a Team dimension with no configuration. `keepSingle` is the one
+ * exception to it — see DimensionSpec.
  *
  * Labels come first: a key someone chose to stamp says more about how the fleet
  * is meant to be read than any field the dashboard invented.
@@ -119,6 +134,7 @@ const INTRINSIC: DimensionSpec[] = [
 export function dimensionsFor(items: ResourceSummary[]): Dimension[] {
   const labelKeys = new Set<string>();
   items.forEach((it) => Object.keys(it.labels ?? {}).forEach((k) => labelKeys.add(k)));
+  OWNER_LABELS.forEach((k) => labelKeys.delete(k));
 
   const candidates: DimensionSpec[] = [
     ...Array.from(labelKeys)
@@ -134,7 +150,7 @@ export function dimensionsFor(items: ResourceSummary[]): Dimension[] {
   const cap = Math.max(2, Math.floor(items.length / 2));
   const sized = candidates
     .map((d) => ({ d, ...spread(items, d, cap) }))
-    .filter(({ parts }) => parts >= 2 && parts <= cap);
+    .filter(({ d, parts }) => parts >= (d.keepSingle ? 1 : 2) && parts <= cap);
 
   // Three rankings, in order.
   //
