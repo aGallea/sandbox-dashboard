@@ -12,6 +12,13 @@ The 0.4.0 entry below predates that and is hand-written.
 
 ---
 
+## [0.9.0](https://github.com/aGallea/sandbox-dashboard/compare/v0.8.0...v0.9.0) (2026-09-06)
+
+
+### Features
+
+* **ui:** group the overview by owner, and remember the view a page was left on ([#26](https://github.com/aGallea/sandbox-dashboard/issues/26)) ([5c24166](https://github.com/aGallea/sandbox-dashboard/commit/5c24166e646689d07e66caadfe9ed95362dfb251))
+
 ## [0.8.0](https://github.com/aGallea/sandbox-dashboard/compare/v0.7.0...v0.8.0) (2026-08-27)
 
 
