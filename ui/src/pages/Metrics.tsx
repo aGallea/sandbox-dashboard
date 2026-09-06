@@ -3,11 +3,13 @@ import { useSearchParams } from 'react-router-dom';
 import { MetricChart } from '../components/MetricChart';
 import { Loading } from '../components/Loading';
 import { fetchMetricCatalog, type MetricRange } from '../api/client';
+import { useStickyParams } from '../prefs/sticky';
 
 const RANGES: MetricRange[] = ['15m', '1h', '6h', '24h'];
 
 export function MetricsPage() {
   const [params, setParams] = useSearchParams();
+  useStickyParams('metrics');
   const raw = params.get('range');
   const range: MetricRange = (RANGES as readonly string[]).includes(raw ?? '')
     ? (raw as MetricRange)
