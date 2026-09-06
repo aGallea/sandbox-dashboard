@@ -9,6 +9,7 @@ import { ColumnHeader, Pager, type SortDir } from '../components/TableControls';
 import { diagnose, formatAge, formatBytes } from '../overview/aggregate';
 import { informative, matchesQuery, podSample, shortId, shortNode, taskLabel } from '../list/rows';
 import { useRefreshInterval } from '../api/refresh';
+import { useStickyParams } from '../prefs/sticky';
 import openSandboxMark from '../assets/opensandbox.png';
 import type { ResourceKind, ResourceSummary, UsageResponse } from '../api/client';
 
@@ -35,6 +36,8 @@ export function ResourceListPage({ kind }: Props) {
   const slowRefetch = useRefreshInterval(6);
 
   const [searchParams, setSearchParams] = useSearchParams();
+  // Per kind: sandbox filters have nothing to say about warm pools.
+  useStickyParams(`list:${kind}`);
   const staleOnly = searchParams.get('stale') === 'true';
   const query = searchParams.get('q') ?? '';
   const sortKey = searchParams.get('sort') ?? 'age';

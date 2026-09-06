@@ -10,6 +10,7 @@ import {
 } from '../api/client';
 import { shortId, taskLabel } from '../list/rows';
 import { useRefreshInterval } from '../api/refresh';
+import { useStickyParams } from '../prefs/sticky';
 import { Loading } from '../components/Loading';
 import { FleetStrip } from '../components/overview/FleetStrip';
 import {
@@ -41,6 +42,7 @@ import {
 
 export function OverviewPage() {
   const [params, setParams] = useSearchParams();
+  useStickyParams('overview');
   const refetchInterval = useRefreshInterval();
   const slowRefetch = useRefreshInterval(6);
 
@@ -285,11 +287,12 @@ export function OverviewPage() {
             <span className="tabular-nums">{scope.length}</span> of {items.length} sandboxes
           </span>
           {/*
-            Only for a stamped label, whose value the list's search can actually
-            match. "1 core" or "Running" would hand over a search that finds
-            nothing, and a link that lies is worse than no link.
+            Only for a stamped label — including Owner, which is one the server
+            normalised — whose value the list's search can actually match. "1
+            core" or "Running" would hand over a search that finds nothing, and
+            a link that lies is worse than no link.
           */}
-          {dimension.key.startsWith('label:') && (
+          {(dimension.key.startsWith('label:') || dimension.key === 'owner') && (
             <Link
               to={`/sandboxes?q=${encodeURIComponent(selected)}`}
               className="text-blue-800 underline decoration-blue-300 hover:decoration-blue-800"

@@ -4,6 +4,7 @@ import type { ResourceSummary, UsageResponse } from '../api/client';
 import {
   DONUT_MAX,
   OTHER_KEY,
+  OWNER_LABELS,
   SERIES,
   STARTUP_GRACE_SECONDS,
   ageBuckets,
@@ -351,6 +352,34 @@ describe('dimensionsFor', () => {
     const items = [sandbox({ labels: { team: 'algo' } }), sandbox({ labels: { team: 'gw' } }), sandbox()];
     expect(dimensionsFor(items).find((d) => d.key === 'label:team')?.covered).toBe(2);
   });
+
+  // A fleet with one owner is the common case, and dropping the dimension left
+  // the page with no way to say whose fleet it is — the list keeps the Owner
+  // column under exactly the same conditions.
+  it('offers Owner even when the whole fleet shares one owner', () => {
+    const items = [sandbox({ owner: 'yuvalg' }), sandbox({ owner: 'yuvalg' })];
+    expect(dimensionsFor(items).find((d) => d.key === 'owner')?.label).toBe('Owner');
+  });
+
+  it('drops Owner when nothing carries one', () => {
+    expect(dimensionsFor([sandbox(), sandbox()]).map((d) => d.key)).not.toContain('owner');
+  });
+
+  // The server folds both keys into `owner`, so offering the raw label too
+  // would put the same split in the picker twice under a different name.
+  it('offers one Owner rather than the raw label the server folded into it', () => {
+    const items = OWNER_LABELS.map((key) => sandbox({ owner: 'a', labels: { [key]: 'a' } }));
+    const keys = dimensionsFor([...items, sandbox({ owner: 'b' })]).map((d) => d.key);
+    expect(keys).toContain('owner');
+    OWNER_LABELS.forEach((key) => expect(keys).not.toContain(`label:${key}`));
+  });
+
+  // keepSingle is about a fleet with one owner, not about one owner per sandbox:
+  // a value nearly every row has to itself still groups nothing.
+  it('drops Owner when it is near-unique across the fleet', () => {
+    const items = Array.from({ length: 4 }, (_, i) => sandbox({ owner: `u${i}` }));
+    expect(dimensionsFor(items).map((d) => d.key)).not.toContain('owner');
+  });
 });
 
 describe('formatting', () => {
@@ -390,12 +419,12 @@ it('keeps the donut group cap above the default groupBy limit', () => {
 describe('valueCounts', () => {
   it('lists every value of a dimension, largest first, with the blank folded into unset', () => {
     const items = [
-      sandbox({ labels: { owner: 'b' } }),
-      sandbox({ labels: { owner: 'a' } }),
-      sandbox({ labels: { owner: 'a' } }),
+      sandbox({ owner: 'b' }),
+      sandbox({ owner: 'a' }),
+      sandbox({ owner: 'a' }),
       sandbox({}),
     ];
-    const owner = dimensionsFor(items).find((d) => d.key === 'label:owner')!;
+    const owner = dimensionsFor(items).find((d) => d.key === 'owner')!;
     expect(valueCounts(items, owner)).toEqual([
       { value: 'a', count: 2 },
       { value: 'b', count: 1 },
