@@ -173,7 +173,7 @@ func fleetCPU() Metric {
 			{Label: "reserved", Query: zeroFloor(joinSandboxPods(
 				`sum(kube_pod_container_resource_requests{resource="cpu"}`))},
 			{Label: "used", Query: zeroFloor(joinSandboxPods(
-				`sum(rate(container_cpu_usage_seconds_total{container!=""}[5m])`))},
+				`sum(` + perPod(`rate(container_cpu_usage_seconds_total{%s}[5m])`, "")))},
 		},
 	}
 }
@@ -188,15 +188,14 @@ func fleetMemory() Metric {
 			{Label: "reserved", Query: zeroFloor(joinSandboxPods(
 				`sum(kube_pod_container_resource_requests{resource="memory"}`) + ` / 1024^3`)},
 			{Label: "used", Query: zeroFloor(joinSandboxPods(
-				`sum(container_memory_working_set_bytes{container!=""}`) + ` / 1024^3`)},
+				`sum(`+perPod(`container_memory_working_set_bytes{%s}`, "")) + ` / 1024^3`)},
 		},
 	}
 }
 
 // joinSandboxPods closes an unfinished `sum(<selector>` with the label join that
-// narrows it to sandbox pods. container!="" is already in the callers' selectors
-// where it matters: cAdvisor also exports a pod-level cgroup series, which would
-// count every pod twice.
+// narrows it to sandbox pods. cAdvisor series go through perPod first, so each
+// pod is counted once whether or not it runs under gVisor.
 func joinSandboxPods(sumPrefix string) string {
 	return fmt.Sprintf(`%s * on (namespace, pod) group_left() %s)`, sumPrefix, SandboxPodLabelSelector)
 }

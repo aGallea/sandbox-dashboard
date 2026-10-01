@@ -59,11 +59,21 @@ func TestUsageQueries_ScopeToTheGivenNamespaces(t *testing.T) {
 	// Sorted, so the query — and any cache keyed on it — is stable across calls.
 	require.Contains(t, cpu, `namespace=~"default|evals"`)
 	require.Contains(t, mem, `namespace=~"default|evals"`)
-	// The pod-level cgroup series must stay out of the sum, or every pod counts twice.
+	// Container series first; the pod cgroup is only a fallback, or every pod counts twice.
 	require.Contains(t, cpu, `container!=""`)
 	require.Contains(t, mem, `container!=""`)
 	require.Contains(t, cpu, "container_cpu_usage_seconds_total")
 	require.Contains(t, mem, "container_memory_working_set_bytes")
+}
+
+// gVisor runs a pod's containers inside one sandbox, so cAdvisor exports only the
+// pod-level cgroup for it. Without the fallback those pods report no usage at all.
+func TestUsageQueries_FallBackToThePodCgroupForGVisorPods(t *testing.T) {
+	cpu, mem := UsageQueries([]string{"default"})
+	for _, q := range []string{cpu, mem} {
+		require.Contains(t, q, `namespace=~"default",container="",image="",pod!=""`)
+		require.Contains(t, q, ") or sum by (namespace, pod) (")
+	}
 }
 
 // The names are cluster state, not user input, but they are interpolated into
