@@ -12,6 +12,13 @@ The 0.4.0 entry below predates that and is hand-written.
 
 ---
 
+## [0.9.1](https://github.com/aGallea/sandbox-dashboard/compare/v0.9.0...v0.9.1) (2026-10-01)
+
+
+### Bug Fixes
+
+* **prom:** report CPU and memory for pods running under gVisor ([#28](https://github.com/aGallea/sandbox-dashboard/issues/28)) ([6a8f417](https://github.com/aGallea/sandbox-dashboard/commit/6a8f41781b073badb7b7bd42e05747cf78cd13e2))
+
 ## [0.9.0](https://github.com/aGallea/sandbox-dashboard/compare/v0.8.0...v0.9.0) (2026-09-06)
 
 
