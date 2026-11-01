@@ -12,6 +12,17 @@ The 0.4.0 entry below predates that and is hand-written.
 
 ---
 
+## [0.10.0](https://github.com/aGallea/sandbox-dashboard/compare/v0.9.1...v0.10.0) (2026-11-01)
+
+
+### ⚠ BREAKING CHANGES
+
+* name the label columns per install instead of reading owner labels ([#30](https://github.com/aGallea/sandbox-dashboard/issues/30))
+
+### Features
+
+* name the label columns per install instead of reading owner labels ([#30](https://github.com/aGallea/sandbox-dashboard/issues/30)) ([ecda32e](https://github.com/aGallea/sandbox-dashboard/commit/ecda32efc0a3fe61d4a33dbff5f79224dbaccb0f))
+
 ## [0.9.1](https://github.com/aGallea/sandbox-dashboard/compare/v0.9.0...v0.9.1) (2026-10-01)
 
 
