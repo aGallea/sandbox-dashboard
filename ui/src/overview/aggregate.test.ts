@@ -4,7 +4,6 @@ import type { ResourceSummary, UsageResponse } from '../api/client';
 import {
   DONUT_MAX,
   OTHER_KEY,
-  OWNER_LABELS,
   SERIES,
   STARTUP_GRACE_SECONDS,
   ageBuckets,
@@ -74,13 +73,13 @@ describe('stateOf', () => {
 });
 
 describe('groupBy', () => {
-  const dim = { key: 'team', label: 'Team', of: (it: ResourceSummary) => it.team ?? '' };
+  const dim = { key: 'team', label: 'Team', of: (it: ResourceSummary) => it.labels?.team ?? '' };
 
   it('sums reservations per group and orders by size', () => {
     const items = [
-      sandbox({ team: 'a', pod: { name: 'p1', phase: 'Running', restarts: 0, cpuMillis: 500, memBytes: 1024, gpu: 1 } }),
-      sandbox({ team: 'a', pod: { name: 'p2', phase: 'Running', restarts: 0, cpuMillis: 250, memBytes: 512, gpu: 0 } }),
-      sandbox({ team: 'b' }),
+      sandbox({ labels: { team: 'a' }, pod: { name: 'p1', phase: 'Running', restarts: 0, cpuMillis: 500, memBytes: 1024, gpu: 1 } }),
+      sandbox({ labels: { team: 'a' }, pod: { name: 'p2', phase: 'Running', restarts: 0, cpuMillis: 250, memBytes: 512, gpu: 0 } }),
+      sandbox({ labels: { team: 'b' } }),
     ];
     const [first, second] = groupBy(items, dim);
     expect(first).toMatchObject({ key: 'a', count: 2, cpuMillis: 750, memBytes: 1536, gpu: 1 });
@@ -92,7 +91,7 @@ describe('groupBy', () => {
   });
 
   it('folds everything past the limit into one Other slice', () => {
-    const items = ['a', 'b', 'c'].flatMap((team) => [sandbox({ team }), sandbox({ team })]);
+    const items = ['a', 'b', 'c'].flatMap((team) => [sandbox({ labels: { team } }), sandbox({ labels: { team } })]);
     const slices = groupBy(items, dim, 2);
     expect(slices).toHaveLength(3);
     expect(slices[2]).toMatchObject({ key: OTHER_KEY, count: 2 });
@@ -104,7 +103,7 @@ describe('groupBy', () => {
   // unchanged.
   describe('is stable across a refresh that changes nothing the reader can see', () => {
     it('breaks count ties on the key, so equal groups cannot swap places', () => {
-      const fleet = ['b', 'a', 'c'].map((team) => sandbox({ team }));
+      const fleet = ['b', 'a', 'c'].map((team) => sandbox({ labels: { team } }));
       const order = (items: ResourceSummary[]) => groupBy(items, dim).map((s) => s.key);
 
       expect(order(fleet)).toEqual(['a', 'b', 'c']);
@@ -113,9 +112,9 @@ describe('groupBy', () => {
     });
 
     it('keeps a group its colour when a smaller group joins below it', () => {
-      const before = groupBy([sandbox({ team: 'a' }), sandbox({ team: 'a' })], dim);
+      const before = groupBy([sandbox({ labels: { team: 'a' } }), sandbox({ labels: { team: 'a' } })], dim);
       const after = groupBy(
-        [sandbox({ team: 'a' }), sandbox({ team: 'a' }), sandbox({ team: 'b' })],
+        [sandbox({ labels: { team: 'a' } }), sandbox({ labels: { team: 'a' } }), sandbox({ labels: { team: 'b' } })],
         dim,
       );
       const colourOf = (slices: Slice[], key: string) => slices.find((s) => s.key === key)?.color;
@@ -127,17 +126,17 @@ describe('groupBy', () => {
     // also be pinned to the name — with a full list any membership change would
     // force a reshuffle. Rank is what the reader is looking at, so rank wins.
     it('gives the largest group the first hue, whatever it is called', () => {
-      const zed = groupBy([sandbox({ team: 'z' }), sandbox({ team: 'z' }), sandbox({ team: 'a' })], dim);
+      const zed = groupBy([sandbox({ labels: { team: 'z' } }), sandbox({ labels: { team: 'z' } }), sandbox({ labels: { team: 'a' } })], dim);
       expect(zed[0]).toMatchObject({ key: 'z', color: SERIES[0] });
       expect(zed[1]).toMatchObject({ key: 'a', color: SERIES[1] });
     });
   });
 
   it('assigns colours by rank so the same fleet always paints the same way', () => {
-    const many = [sandbox({ team: 'a' }), sandbox({ team: 'a' }), sandbox({ team: 'b' })];
+    const many = [sandbox({ labels: { team: 'a' } }), sandbox({ labels: { team: 'a' } }), sandbox({ labels: { team: 'b' } })];
     const byCount = groupBy(many, dim);
     // Same fleet, opposite arrival order: 'b' now leads on count.
-    const flipped = groupBy([...many.slice(2), ...many.slice(0, 2), sandbox({ team: 'b' })], dim);
+    const flipped = groupBy([...many.slice(2), ...many.slice(0, 2), sandbox({ labels: { team: 'b' } })], dim);
     const colourOf = (s: { key: string; color: string }[], k: string) =>
       s.find((x) => x.key === k)!.color;
     expect(colourOf(flipped, 'a')).toBe(colourOf(byCount, 'a'));
@@ -146,7 +145,7 @@ describe('groupBy', () => {
 
   it('joins live usage by namespace/pod, ignoring samples for other pods', () => {
     const items = [
-      sandbox({ namespace: 'ns', team: 'a', pod: { name: 'p1', phase: 'Running', restarts: 0, cpuMillis: 0, memBytes: 0, gpu: 0 } }),
+      sandbox({ namespace: 'ns', labels: { team: 'a' }, pod: { name: 'p1', phase: 'Running', restarts: 0, cpuMillis: 0, memBytes: 0, gpu: 0 } }),
     ];
     const usage: UsageResponse = {
       sampledAt: '2026-08-23T00:00:00Z',
@@ -354,31 +353,51 @@ describe('dimensionsFor', () => {
   });
 
   // A fleet with one owner is the common case, and dropping the dimension left
-  // the page with no way to say whose fleet it is — the list keeps the Owner
-  // column under exactly the same conditions.
-  it('offers Owner even when the whole fleet shares one owner', () => {
-    const items = [sandbox({ owner: 'yuvalg' }), sandbox({ owner: 'yuvalg' })];
-    expect(dimensionsFor(items).find((d) => d.key === 'owner')?.label).toBe('Owner');
+  // the page with no way to say whose fleet it is — the list keeps the column
+  // under exactly the same conditions.
+  describe('with label columns configured', () => {
+    const owner = { name: 'Owner', labels: ['example.com/user', 'owner'] };
+
+    it('offers a column even when the whole fleet shares one value', () => {
+      const items = [sandbox({ labels: { owner: 'yuvalg' } }), sandbox({ labels: { owner: 'yuvalg' } })];
+      expect(dimensionsFor(items, [owner]).find((d) => d.key === 'column:Owner')?.label).toBe('Owner');
+    });
+
+    it('reads the first of its labels each sandbox has', () => {
+      const items = [
+        sandbox({ labels: { 'example.com/user': 'a', owner: 'stale' } }),
+        sandbox({ labels: { owner: 'b' } }),
+      ];
+      const column = dimensionsFor(items, [owner]).find((d) => d.key === 'column:Owner');
+      expect(items.map((it) => column?.of(it))).toEqual(['a', 'b']);
+    });
+
+    it('drops a column nothing carries', () => {
+      expect(dimensionsFor([sandbox(), sandbox()], [owner]).map((d) => d.key)).not.toContain('column:Owner');
+    });
+
+    // Offering the raw labels too would put the same split in the picker twice
+    // under a different name.
+    it('offers the column rather than the raw labels it reads', () => {
+      const items = [sandbox({ labels: { 'example.com/user': 'a' } }), sandbox({ labels: { owner: 'b' } })];
+      const keys = dimensionsFor(items, [owner]).map((d) => d.key);
+      expect(keys).toContain('column:Owner');
+      owner.labels.forEach((key) => expect(keys).not.toContain(`label:${key}`));
+    });
+
+    // keepSingle is about a fleet with one owner, not about one owner per
+    // sandbox: a value nearly every row has to itself still groups nothing.
+    it('drops a column that is near-unique across the fleet', () => {
+      const items = Array.from({ length: 4 }, (_, i) => sandbox({ labels: { owner: `u${i}` } }));
+      expect(dimensionsFor(items, [owner]).map((d) => d.key)).not.toContain('column:Owner');
+    });
   });
 
-  it('drops Owner when nothing carries one', () => {
-    expect(dimensionsFor([sandbox(), sandbox()]).map((d) => d.key)).not.toContain('owner');
-  });
-
-  // The server folds both keys into `owner`, so offering the raw label too
-  // would put the same split in the picker twice under a different name.
-  it('offers one Owner rather than the raw label the server folded into it', () => {
-    const items = OWNER_LABELS.map((key) => sandbox({ owner: 'a', labels: { [key]: 'a' } }));
-    const keys = dimensionsFor([...items, sandbox({ owner: 'b' })]).map((d) => d.key);
-    expect(keys).toContain('owner');
-    OWNER_LABELS.forEach((key) => expect(keys).not.toContain(`label:${key}`));
-  });
-
-  // keepSingle is about a fleet with one owner, not about one owner per sandbox:
-  // a value nearly every row has to itself still groups nothing.
-  it('drops Owner when it is near-unique across the fleet', () => {
-    const items = Array.from({ length: 4 }, (_, i) => sandbox({ owner: `u${i}` }));
-    expect(dimensionsFor(items).map((d) => d.key)).not.toContain('owner');
+  it('treats an owner label as any other label when no column names it', () => {
+    const items = ['a', 'a', 'b', 'b'].map((o) => sandbox({ labels: { owner: o } }));
+    const keys = dimensionsFor(items, []).map((d) => d.key);
+    expect(keys).toContain('label:owner');
+    expect(keys.filter((k) => k.startsWith('column:'))).toEqual([]);
   });
 });
 
@@ -419,12 +438,12 @@ it('keeps the donut group cap above the default groupBy limit', () => {
 describe('valueCounts', () => {
   it('lists every value of a dimension, largest first, with the blank folded into unset', () => {
     const items = [
-      sandbox({ owner: 'b' }),
-      sandbox({ owner: 'a' }),
-      sandbox({ owner: 'a' }),
+      sandbox({ labels: { owner: 'b' } }),
+      sandbox({ labels: { owner: 'a' } }),
+      sandbox({ labels: { owner: 'a' } }),
       sandbox({}),
     ];
-    const owner = dimensionsFor(items).find((d) => d.key === 'owner')!;
+    const owner = dimensionsFor(items, [{ name: 'Owner', labels: ['owner'] }]).find((d) => d.key === 'column:Owner')!;
     expect(valueCounts(items, owner)).toEqual([
       { value: 'a', count: 2 },
       { value: 'b', count: 1 },

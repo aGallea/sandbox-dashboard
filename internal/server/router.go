@@ -3,6 +3,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"html"
 	"io/fs"
@@ -52,6 +53,9 @@ type Deps struct {
 	// prefix before it arrives. This exists only to tell the browser, which does
 	// see the prefix and has to ask for the assets and the API under it.
 	BasePath string
+	// LabelColumns are the list columns this install reads from sandbox labels.
+	// They are handed to the browser, which reads the values off each row.
+	LabelColumns []LabelColumn
 	// Now supplies the current time; tests substitute a fixed clock.
 	// If nil, time.Now is used.
 	Now func() time.Time
@@ -61,6 +65,14 @@ type Deps struct {
 	// OsbTimeout bounds a single OpenSandbox inventory fetch. If zero,
 	// DefaultOsbTimeout is used.
 	OsbTimeout time.Duration
+}
+
+// LabelColumn is a column read from a sandbox's labels: the first of Labels
+// the sandbox has. Which labels say who owns a sandbox differs per fleet, so the
+// install names them, not the dashboard.
+type LabelColumn struct {
+	Name   string   `json:"name"`
+	Labels []string `json:"labels"`
 }
 
 // OsbClient is the subset of *osb.Client the sandbox handlers depend on.
@@ -235,11 +247,17 @@ func serveIndex(w http.ResponseWriter, req *http.Request, d Deps) {
 	}
 
 	base := normaliseBasePath(d.BasePath)
+	columns := d.LabelColumns
+	if columns == nil {
+		columns = []LabelColumn{}
+	}
+	// Cannot fail on strings, and escapes <, > and &, so no name closes the script.
+	columnsJSON, _ := json.Marshal(columns)
 	// html.EscapeString on both: the value lands in an HTML attribute and in a
 	// JS string literal, and a quote in either would break out of it.
 	injected := fmt.Sprintf(
-		"<base href=\"%s/\"><script>window.__BASE_PATH__ = \"%s\"</script>",
-		html.EscapeString(base), html.EscapeString(base),
+		"<base href=\"%s/\"><script>window.__BASE_PATH__ = \"%s\"; window.__LABEL_COLUMNS__ = %s</script>",
+		html.EscapeString(base), html.EscapeString(base), columnsJSON,
 	)
 
 	// Immediately after <head> so the base applies to every URL that follows.

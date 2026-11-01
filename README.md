@@ -128,12 +128,13 @@ HTTP surface:
 ## Configuration
 
 Every setting is an environment variable, so the chart, a plain Deployment patch and a local
-binary all configure it the same way. Four also have flags, which win over the environment.
+binary all configure it the same way. Some also have flags, which win over the environment.
 
 | Env | Flag | Default | Purpose |
 |---|---|---|---|
 | `AGENT_SANDBOX_DASHBOARD_LISTEN_ADDR` | `--listen-addr` | `:8080` | Bind address. A bare port is accepted. |
 | `AGENT_SANDBOX_DASHBOARD_WATCH_NAMESPACES` | `--watch-namespaces` | every namespace | Comma-separated namespaces to watch. See [Scope](#scope). |
+| `AGENT_SANDBOX_DASHBOARD_LABEL_COLUMNS` | `--label-columns` | none | List columns read from sandbox labels, as JSON. See [Label columns](#label-columns). |
 | `AGENT_SANDBOX_DASHBOARD_LOG_LEVEL` | `--log-level` | `info` | `debug`, `info`, `warn` or `error`. Probe requests (`/healthz`, `/readyz`) are logged at `debug`. |
 | `PROMETHEUS_URL` | `--prometheus-url` | unset | Base URL. Unset disables the metrics page and the usage panels. |
 | `OPENSANDBOX_URL` | `--opensandbox-url` | unset | Base URL. Unset disables the OpenSandbox fields. |
@@ -144,6 +145,23 @@ binary all configure it the same way. Four also have flags, which win over the e
 | `AGENT_SANDBOX_DASHBOARD_OSB_STALE_AFTER` | — | `60s` | How long a transient OpenSandbox state may sit before it is reported stale. |
 | `AGENT_SANDBOX_DASHBOARD_OSB_TIMEOUT` | — | `5s` | Bounds one OpenSandbox inventory fetch. |
 | — | `--kubeconfig` | in-cluster | Registered by controller-runtime. Omit inside a cluster. |
+
+### Label columns
+
+Which labels say who a sandbox belongs to differs per fleet, so the dashboard reads none on its
+own. Name them in `AGENT_SANDBOX_DASHBOARD_LABEL_COLUMNS`, a JSON list of columns. Each shows the
+first of its labels a sandbox has:
+
+```json
+[
+  {"name": "Owner", "labels": ["example.com/user", "owner"]},
+  {"name": "Team", "labels": ["example.com/team", "team"]}
+]
+```
+
+Each column is sortable and filterable in the sandbox list, appears once a sandbox has a value,
+and is a grouping on the overview even when the whole fleet shares one value. The dashboard
+refuses to start on a value it cannot read.
 
 ### Scope
 
@@ -222,10 +240,9 @@ matched only 29/92, because OpenSandbox writes both `<uuid>` and `sandbox-<uuid>
 
 `creator` is derived from that label alone, so `GET /api/v1/sandboxes` reports it —
 `opensandbox` when the label is present, `unknown` otherwise — whether or not OpenSandbox is
-configured. The identity fields `owner`, `team`, `experiment` and `sessionId` are likewise read
-from labels and need no OpenSandbox configuration, but unlike `creator` they have no fallback
-value: each key is omitted when its label is absent. In practice `session_id` is the one most
-reliably present.
+configured. `sessionId` is likewise read from the `session_id` label and needs no OpenSandbox
+configuration, but unlike `creator` it has no fallback value: it is omitted when the label is
+absent.
 
 Configuring OpenSandbox adds a per-row `osb` object:
 
@@ -236,7 +253,7 @@ Configuring OpenSandbox adds a per-row `osb` object:
 
 plus a sibling `osb` object on the response reporting `status`, `reported` and `matched`.
 Filter with `?creator=`, `?osbState=` and `?stale=true`. The sandbox list shows these as
-**Creator**, **Session**, **Owner** and **OSB State** columns, with `⚠` when OpenSandbox
+**Creator**, **Session** and **OSB State** columns, with `⚠` when OpenSandbox
 disagrees with the Ready condition and `⏱` plus the state's age when a transient OpenSandbox
 state has stopped advancing.
 

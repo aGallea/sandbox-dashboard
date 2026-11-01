@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMemo } from 'react';
 import { fetchList, fetchUsage } from '../api/client';
+import { labelColumns, labelValue, type LabelColumn } from '../api/labelColumns';
 import { RESOURCES } from '../resources/config';
 import { DetailDrawer } from '../components/DetailDrawer';
 import { Loading } from '../components/Loading';
@@ -17,10 +18,12 @@ interface Props {
   kind: ResourceKind;
 }
 
-// Columns worth picking values from a list. The task label is near-unique per
-// row and Age is a number that moves every refresh, so neither makes a useful
-// value filter.
-const FILTERABLE = ['namespace', 'phase', 'creator', 'owner', 'node'];
+// Columns worth picking values from a list, besides the install's label
+// columns. The task label is near-unique per row and Age is a number that moves
+// every refresh, so neither makes a useful value filter.
+const FILTERABLE = ['namespace', 'phase', 'creator', 'node'];
+
+const columnKey = (column: LabelColumn) => `column:${column.name}`;
 
 const paramFor = (col: string) => `f_${col}`;
 
@@ -43,18 +46,20 @@ export function ResourceListPage({ kind }: Props) {
   const sortKey = searchParams.get('sort') ?? 'age';
   const sortDir: SortDir = searchParams.get('dir') === 'desc' ? 'desc' : 'asc';
   const search = searchParams.toString() ? `?${searchParams.toString()}` : '';
+  const columns = useMemo(() => labelColumns(), []);
+  const filterable = useMemo(() => [...FILTERABLE, ...columns.map(columnKey)], [columns]);
 
   // Column filters are client-side: the list is one unpaginated fetch, so
   // filtering it here costs nothing and keeps every column's value list built
   // from the same response the table is showing.
   const filters = useMemo(() => {
     const active = new Map<string, Set<string>>();
-    FILTERABLE.forEach((col) => {
+    filterable.forEach((col) => {
       const values = searchParams.getAll(paramFor(col));
       if (values.length) active.set(col, new Set(values));
     });
     return active;
-  }, [searchParams]);
+  }, [searchParams, filterable]);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['list', kind, staleOnly],
@@ -84,7 +89,6 @@ export function ResourceListPage({ kind }: Props) {
       phase: (it) => it.phase,
       creator: (it) => it.creator ?? '',
       sessionId: (it) => it.sessionId ?? '',
-      owner: (it) => it.owner ?? '',
       node: (it) => it.pod?.node ?? '',
       // What the cluster granted, not what is being used. Sorting on live usage
       // reshuffled the table on every refresh, and collapsed every row
@@ -94,8 +98,11 @@ export function ResourceListPage({ kind }: Props) {
       cpu: (it) => it.pod?.cpuMillis ?? 0,
       mem: (it) => it.pod?.memBytes ?? 0,
       age: (it) => it.ageSeconds,
+      ...Object.fromEntries(
+        columns.map((c) => [columnKey(c), (it: ResourceSummary) => labelValue(it, c)]),
+      ),
     }),
-    [],
+    [columns],
   );
 
   // Value lists come from the whole response, not the filtered rows, so a
@@ -104,13 +111,13 @@ export function ResourceListPage({ kind }: Props) {
   // first so the menu shows it as "(none)" at the top.
   const options = useMemo(() => {
     const byColumn: Record<string, string[]> = {};
-    FILTERABLE.forEach((col) => {
+    filterable.forEach((col) => {
       const seen = new Set<string>();
       data?.items.forEach((it) => seen.add(String(columnValue[col](it) ?? '')));
       byColumn[col] = Array.from(seen).sort();
     });
     return byColumn;
-  }, [data, columnValue]);
+  }, [data, columnValue, filterable]);
   const hasValues = (col: string) => options[col]?.some(Boolean) ?? false;
 
   const rows = useMemo(() => {
@@ -146,11 +153,11 @@ export function ResourceListPage({ kind }: Props) {
   const page = Math.min(Math.max(1, Number(searchParams.get('page')) || 1), pageCount);
   const visible = rows.slice((page - 1) * pageSize, page * pageSize);
 
-  // Owner/team/experiment are optional labels the eval harness stamps only for
-  // some workloads; a column of nothing but em-dashes is worse than no column.
-  // One owner across the whole fleet is still worth a column — unlike the
-  // columns below, nothing else on the row says who it belongs to.
-  const showOwner = cfg.showOsb && hasValues('owner');
+  // A label column whose labels no sandbox carries is a column of nothing, which
+  // is worse than no column. One owner across the whole fleet is still worth a
+  // column — unlike the columns below, nothing else on the row says who it
+  // belongs to.
+  const shownColumns = columns.filter((c) => cfg.showOsb && hasValues(columnKey(c)));
 
   // A column whose every row says `default` costs width and teaches nothing.
   // Both come back on their own once the fleet spans more than one value.
@@ -166,7 +173,7 @@ export function ResourceListPage({ kind }: Props) {
   // The response omits `osb` entirely when no OPENSANDBOX_URL is set, which is
   // how the UI can tell "not configured" from "configured but unreachable".
   // OpenSandbox state appears in the Status cell only for the former — the same
-  // em-dash rule as Owner above.
+  // rule as the label columns above.
   const osbConfigured = cfg.showOsb && !!data?.osb;
 
   // Stale is computed by OpenSandbox, so a filtered empty list means "could not
@@ -229,7 +236,7 @@ export function ResourceListPage({ kind }: Props) {
 
   const clearAllFilters = () => {
     const next = new URLSearchParams(searchParams);
-    FILTERABLE.forEach((col) => next.delete(paramFor(col)));
+    filterable.forEach((col) => next.delete(paramFor(col)));
     commit(next);
   };
 
@@ -260,7 +267,7 @@ export function ResourceListPage({ kind }: Props) {
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder={cfg.showOsb ? 'Search task, owner, image, node, id…' : 'Search…'}
+            placeholder={cfg.showOsb ? 'Search task, label, image, node, id…' : 'Search…'}
             aria-label={`Search ${cfg.label.toLowerCase()}`}
             className="w-72 rounded-lg border border-slate-300 px-3 py-1 text-sm"
           />
@@ -368,9 +375,15 @@ export function ResourceListPage({ kind }: Props) {
                     filter={filterFor('creator')}
                   />
                 )}
-                {showOwner && (
-                  <ColumnHeader label="Owner" col="owner" sort={sort} filter={filterFor('owner')} />
-                )}
+                {shownColumns.map((c) => (
+                  <ColumnHeader
+                    key={c.name}
+                    label={c.name}
+                    col={columnKey(c)}
+                    sort={sort}
+                    filter={filterFor(columnKey(c))}
+                  />
+                ))}
                 {showUsage && (
                   <ColumnHeader
                     label="CPU cores"
@@ -427,18 +440,11 @@ export function ResourceListPage({ kind }: Props) {
                         <Creator creator={it.creator} />
                       </td>
                     )}
-                    {showOwner && (
-                      <td className="px-3 py-2 text-slate-600">
-                        {it.owner ? (
-                          <>
-                            <div className="whitespace-nowrap">{it.owner}</div>
-                            {it.team && <div className="text-xs text-slate-400">{it.team}</div>}
-                          </>
-                        ) : (
-                          ''
-                        )}
+                    {shownColumns.map((c) => (
+                      <td key={c.name} className="px-3 py-2 text-slate-600 whitespace-nowrap">
+                        {labelValue(it, c)}
                       </td>
-                    )}
+                    ))}
                     {showUsage && (
                       <td className="px-3 py-2 text-slate-600 tabular-nums">
                         <Load

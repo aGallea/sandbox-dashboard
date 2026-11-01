@@ -7,6 +7,7 @@
  * sandboxes, move these rollups behind /api/v1/overview and send the totals.
  */
 import type { ResourceSummary, UsageResponse } from '../api/client';
+import { labelColumns, labelValue, type LabelColumn } from '../api/labelColumns';
 import { AGE_RAMP, OTHER_COLOR, SERIES, STATUS } from '../viz/palette';
 
 // ----- palette -------------------------------------------------------------
@@ -77,8 +78,9 @@ export interface DimensionSpec {
   of: (it: ResourceSummary) => string;
   /**
    * Keeps the dimension on offer when the whole fleet shares one value. Only
-   * for the ones that name who a sandbox belongs to: a single-slice ring still
-   * answers "whose fleet is this", which nothing else on the page does.
+   * for the install's label columns, which name who a sandbox belongs to: a
+   * single-slice ring still answers "whose fleet is this", which nothing else
+   * on the page does.
    */
   keepSingle?: boolean;
 }
@@ -92,13 +94,13 @@ export interface Dimension extends DimensionSpec {
 
 /** Marks a dimension as one the fleet stamps rather than one we derived. */
 const LABEL_PREFIX = 'label:';
+/** Marks one of the install's label columns, which also reads stamped labels. */
+const COLUMN_PREFIX = 'column:';
 
-/**
- * The label keys the server folds into `owner` (see identityFor in
- * internal/server/summaries.go). They are dropped from the discovered label
- * dimensions so the picker offers one "Owner", not that plus a raw key.
- */
-export const OWNER_LABELS = ['ai21.com/owner', 'owner'];
+/** Whether a dimension's values are labels the fleet stamps, so search finds them. */
+export function fromLabels(d: DimensionSpec): boolean {
+  return d.key.startsWith(LABEL_PREFIX) || d.key.startsWith(COLUMN_PREFIX);
+}
 
 const INTRINSIC: DimensionSpec[] = [
   { key: 'image', label: 'Image', of: (it) => shortImage(it.pod?.image) },
@@ -113,7 +115,6 @@ const INTRINSIC: DimensionSpec[] = [
   { key: 'readiness', label: 'Readiness', of: (it) => STATE_LABEL[stateOf(it)] },
   { key: 'osbState', label: 'OSB state', of: (it) => it.osb?.state ?? '' },
   { key: 'creator', label: 'Creator', of: (it) => it.creator ?? '' },
-  { key: 'owner', label: 'Owner', of: (it) => it.owner ?? '', keepSingle: true },
 ];
 
 /**
@@ -131,12 +132,22 @@ const INTRINSIC: DimensionSpec[] = [
  * Labels come first: a key someone chose to stamp says more about how the fleet
  * is meant to be read than any field the dashboard invented.
  */
-export function dimensionsFor(items: ResourceSummary[]): Dimension[] {
+export function dimensionsFor(
+  items: ResourceSummary[],
+  columns: LabelColumn[] = labelColumns(),
+): Dimension[] {
   const labelKeys = new Set<string>();
   items.forEach((it) => Object.keys(it.labels ?? {}).forEach((k) => labelKeys.add(k)));
-  OWNER_LABELS.forEach((k) => labelKeys.delete(k));
+  // A column's own labels would offer the same split twice under another name.
+  columns.forEach((c) => c.labels.forEach((k) => labelKeys.delete(k)));
 
   const candidates: DimensionSpec[] = [
+    ...columns.map((c) => ({
+      key: `${COLUMN_PREFIX}${c.name}`,
+      label: c.name,
+      of: (it: ResourceSummary) => labelValue(it, c),
+      keepSingle: true,
+    })),
     ...Array.from(labelKeys)
       .sort()
       .map((key) => ({
@@ -197,7 +208,7 @@ function spread(
 
 /** 1 for a label the fleet stamps, 0 for a field the dashboard derived. */
 function stamped(d: DimensionSpec): number {
-  return d.key.startsWith(LABEL_PREFIX) ? 1 : 0;
+  return fromLabels(d) ? 1 : 0;
 }
 
 /** 0 for a part-to-whole shape, 1 for a long tail. Order within a band holds. */

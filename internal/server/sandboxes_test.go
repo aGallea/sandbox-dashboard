@@ -250,8 +250,6 @@ func TestSandboxes_List_JoinsOpenSandboxStateOnTheIDLabel(t *testing.T) {
 
 	it := got.Items[0]
 	require.Equal(t, CreatorOpenSandbox, it.Creator)
-	require.Equal(t, "odeda", it.Owner)
-	require.Equal(t, "ig", it.Team)
 	require.Equal(t, "Ready", it.Phase)
 	require.NotNil(t, it.Osb)
 	require.Equal(t, "Pending", it.Osb.State)
@@ -572,7 +570,6 @@ func TestSandboxes_List_ExposesSessionIDForThinlyLabelledSandboxes(t *testing.T)
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
 	require.Len(t, got.Items, 1)
 	require.Equal(t, "regex-chess__33BjxVG__env", got.Items[0].SessionID)
-	require.Empty(t, got.Items[0].Owner, "this fleet stamps no owner label")
 }
 
 func TestSandboxes_List_OmitsSessionIDWhenLabelAbsent(t *testing.T) {

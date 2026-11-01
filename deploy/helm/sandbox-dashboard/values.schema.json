@@ -218,6 +218,19 @@
       "type": "string",
       "description": "URL prefix the dashboard is served under, e.g. /sandbox-dashboard. Empty means the domain root. The proxy in front must strip it."
     },
+    "labelColumns": {
+      "type": "array",
+      "description": "List columns read from sandbox labels; each shows the first of its labels a sandbox has.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "labels"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "labels": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+        }
+      }
+    },
     "resources": {
       "type": "object"
     },

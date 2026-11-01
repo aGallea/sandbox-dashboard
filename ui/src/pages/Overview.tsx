@@ -25,6 +25,7 @@ import {
   ageBuckets,
   alerts,
   dimensionsFor,
+  fromLabels,
   formatAge,
   formatBytes,
   formatCores,
@@ -287,12 +288,12 @@ export function OverviewPage() {
             <span className="tabular-nums">{scope.length}</span> of {items.length} sandboxes
           </span>
           {/*
-            Only for a stamped label — including Owner, which is one the server
-            normalised — whose value the list's search can actually match. "1
-            core" or "Running" would hand over a search that finds nothing, and
-            a link that lies is worse than no link.
+            Only for a stamped label — including a label column — whose value
+            the list's search can actually match. "1 core" or "Running" would
+            hand over a search that finds nothing, and a link that lies is worse
+            than no link.
           */}
-          {(dimension.key.startsWith('label:') || dimension.key === 'owner') && (
+          {fromLabels(dimension) && (
             <Link
               to={`/sandboxes?q=${encodeURIComponent(selected)}`}
               className="text-blue-800 underline decoration-blue-300 hover:decoration-blue-800"

@@ -3,12 +3,15 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -46,6 +49,8 @@ func main() {
 	flag.StringVar(&watchNamespaces, "watch-namespaces", "", "Comma-separated namespaces to watch (e.g. default,team-a). If empty, every namespace — which needs a ClusterRole. Must match the RBAC this install was given; or AGENT_SANDBOX_DASHBOARD_WATCH_NAMESPACES.")
 	var logLevel string
 	flag.StringVar(&logLevel, "log-level", "", "Log level: debug, info, warn or error (default \"info\"; or AGENT_SANDBOX_DASHBOARD_LOG_LEVEL). Probe requests are logged at debug.")
+	var labelColumns string
+	flag.StringVar(&labelColumns, "label-columns", "", `List columns read from sandbox labels, as JSON: [{"name":"Owner","labels":["example.com/user","owner"]}]. A column shows the first of its labels a sandbox has. Or AGENT_SANDBOX_DASHBOARD_LABEL_COLUMNS.`)
 	flag.Parse()
 
 	listenAddr = resolveListenAddr(listenAddr, os.Getenv("AGENT_SANDBOX_DASHBOARD_LISTEN_ADDR"))
@@ -59,6 +64,11 @@ func main() {
 	ctrl.SetLogger(slogToLogr(logger))
 	if levelErr != nil {
 		logger.Warn("unrecognised log level, using info", "err", levelErr)
+	}
+	columns, err := resolveLabelColumns(labelColumns, os.Getenv("AGENT_SANDBOX_DASHBOARD_LABEL_COLUMNS"))
+	if err != nil {
+		logger.Error("read label columns", "err", err)
+		os.Exit(1)
 	}
 
 	if promURL == "" {
@@ -163,6 +173,7 @@ func main() {
 		Logs:            server.ClientsetLogs{Interface: clientset},
 		WatchNamespaces: namespaces,
 		BasePath:        basePath,
+		LabelColumns:    columns,
 		Metrics:         prom.NewRegistry(envOr("AGENT_SANDBOX_DASHBOARD_CONTROLLER_JOB", prom.DefaultControllerJob)),
 		CacheSynced:     cacheSynced.Load,
 		UIAssets:        assets,
@@ -272,6 +283,35 @@ func resolveListenAddr(flagValue, envValue string) string {
 		return ":" + addr
 	}
 	return addr
+}
+
+// resolveLabelColumns parses the flag (or its env fallback) as the label
+// columns' JSON. Nil when neither is set; an error for anything it cannot use.
+func resolveLabelColumns(flagValue, envValue string) ([]server.LabelColumn, error) {
+	raw := flagValue
+	if raw == "" {
+		raw = envValue
+	}
+	if raw == "" {
+		return nil, nil
+	}
+	var columns []server.LabelColumn
+	dec := json.NewDecoder(strings.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&columns); err != nil {
+		return nil, fmt.Errorf("label columns must be a JSON list of {name, labels}: %w", err)
+	}
+	seen := map[string]bool{}
+	for _, c := range columns {
+		if c.Name == "" || len(c.Labels) == 0 || slices.Contains(c.Labels, "") {
+			return nil, fmt.Errorf("label column %q needs a name and at least one label", c.Name)
+		}
+		if seen[c.Name] {
+			return nil, fmt.Errorf("label column %q is named twice", c.Name)
+		}
+		seen[c.Name] = true
+	}
+	return columns, nil
 }
 
 // resolveLogLevel parses the flag (or its env fallback) as a slog level. Info
