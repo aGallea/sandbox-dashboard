@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { ResourceSummary } from '../../api/client';
+import { labelColumns, labelValue } from '../../api/labelColumns';
 import {
   STATE_COLOR,
   STATE_LABEL,
@@ -134,12 +135,14 @@ function HoverCard({ it, x, y }: { it: ResourceSummary; x: number; y: number }) 
             <span className="break-all font-mono text-[11px]">{pod.node}</span>
           </Row>
         )}
-        {it.owner && (
-          <Row label="Owner">
-            {it.owner}
-            {it.team && <span className="text-slate-400"> · {it.team}</span>}
-          </Row>
-        )}
+        {labelColumns().map((c) => {
+          const value = labelValue(it, c);
+          return value ? (
+            <Row key={c.name} label={c.name}>
+              {value}
+            </Row>
+          ) : null;
+        })}
         {it.osb?.message && <Row label="OpenSandbox">{it.osb.message}</Row>}
         {it.osb?.diverged && (
           <Row label="Divergence">

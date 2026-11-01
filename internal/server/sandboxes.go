@@ -92,7 +92,6 @@ func handleSandboxList(d Deps) http.HandlerFunc {
 			item := &list.Items[i]
 			phase := readyPhase(item.Status.Conditions)
 			creator := creatorFor(item.Labels)
-			owner, team, experiment, sessionID := identityFor(item.Labels)
 
 			// Join before any display filter: `matched` must count join success
 			// across the whole fleet, not "joined and survived the filters".
@@ -139,10 +138,7 @@ func handleSandboxList(d Deps) http.HandlerFunc {
 				Phase:      phase,
 				AgeSeconds: ageSeconds(item.ObjectMeta, now),
 				Creator:    creator,
-				Owner:      owner,
-				Team:       team,
-				Experiment: experiment,
-				SessionID:  sessionID,
+				SessionID:  item.Labels[SessionIDLabel],
 				Osb:        view,
 				Pod:        podViewFor(pods, item.UID),
 				Labels:     item.Labels,
@@ -195,7 +191,6 @@ func handleSandboxDetail(d Deps) http.HandlerFunc {
 		now := d.now()
 		phase := readyPhase(sb.Status.Conditions)
 		creator := creatorFor(sb.Labels)
-		owner, team, experiment, sessionID := identityFor(sb.Labels)
 
 		pods, err := podsBySandboxUID(r.Context(), d.Client, ns)
 		if err != nil && d.Logger != nil {
@@ -232,10 +227,7 @@ func handleSandboxDetail(d Deps) http.HandlerFunc {
 				Phase:      phase,
 				AgeSeconds: ageSeconds(sb.ObjectMeta, now),
 				Creator:    creator,
-				Owner:      owner,
-				Team:       team,
-				Experiment: experiment,
-				SessionID:  sessionID,
+				SessionID:  sb.Labels[SessionIDLabel],
 				Osb:        view,
 				Pod:        podViewFor(pods, sb.UID),
 				Labels:     sb.Labels,

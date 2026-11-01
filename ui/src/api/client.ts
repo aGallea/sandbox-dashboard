@@ -98,9 +98,6 @@ export interface ResourceSummary {
   ageSeconds: number;
   /** Sandboxes only. */
   creator?: string;
-  owner?: string;
-  team?: string;
-  experiment?: string;
   sessionId?: string;
   osb?: OsbView;
   pod?: PodView;

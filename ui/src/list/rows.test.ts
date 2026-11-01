@@ -88,8 +88,7 @@ describe('shortNode', () => {
 describe('matchesQuery', () => {
   const it_ = sandbox({
     sessionId: 'build-pmars__Ry5KMzg__env',
-    owner: 'yuvalg',
-    team: 'intelligent-gateway',
+    labels: { owner: 'yuvalg', team: 'intelligent-gateway' },
     pod: pod({ image: 'alexgshaw/build-pmars:20251031', node: 'gke-main-static-16-3e7c5225-jl6m' }),
   });
 
@@ -133,8 +132,8 @@ describe('informative', () => {
   });
 
   it('does not count blanks as a value of their own', () => {
-    const owner = (it: ResourceSummary) => it.owner ?? '';
-    expect(informative([sandbox({ owner: 'yuvalg' }), sandbox()], owner)).toBe(false);
+    const owner = (it: ResourceSummary) => it.labels?.owner ?? '';
+    expect(informative([sandbox({ labels: { owner: 'yuvalg' } }), sandbox()], owner)).toBe(false);
     expect(informative([sandbox(), sandbox()], owner)).toBe(false);
   });
 });

@@ -115,6 +115,7 @@ Two things to know:
 | `serviceAccount.name` | `""` | Defaults to the release's full name. |
 | `serviceAccount.annotations` | `{}` | For IRSA / Workload Identity. |
 | `watchNamespaces` | `[]` | Namespaces to watch. Empty means every namespace, via a ClusterRole. Listing namespaces narrows the informers *and* the RBAC to a Role per namespace — see [Narrowing the scope](#narrowing-the-scope). |
+| `labelColumns` | `[]` | List columns read from sandbox labels, as `{name, labels}`; each shows the first of its labels a sandbox has. See [Label columns](../../../README.md#label-columns). |
 | `rbac.create` | `true` | The role and binding. A ClusterRole when `watchNamespaces` is empty, otherwise a Role per namespace. Without an equivalent role the pod serves no resource. |
 | `service.type` | `ClusterIP` | |
 | `service.port` | `80` | Service port; the container port is `listenPort`. |

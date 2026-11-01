@@ -152,3 +152,36 @@ func TestSPA_CarriesTheBasePathToTheBrowser(t *testing.T) {
 		require.NotContains(t, rec.Body.String(), "<script>alert(1)</script>")
 	})
 }
+
+func TestSPA_CarriesTheLabelColumnsToTheBrowser(t *testing.T) {
+	assets := fstest.MapFS{
+		"index.html": &fstest.MapFile{Data: []byte(
+			`<!doctype html><html><head><title>t</title></head><body></body></html>`)},
+	}
+	get := func(t *testing.T, columns []LabelColumn) string {
+		t.Helper()
+		r := New(Deps{UIAssets: assets, LabelColumns: columns, CacheSynced: func() bool { return true }})
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+		require.Equal(t, http.StatusOK, rec.Code)
+		return rec.Body.String()
+	}
+
+	t.Run("as a JSON array, in the configured order", func(t *testing.T) {
+		body := get(t, []LabelColumn{
+			{Name: "Owner", Labels: []string{"example.com/user", "owner"}},
+			{Name: "Team", Labels: []string{"team"}},
+		})
+		require.Contains(t, body,
+			`window.__LABEL_COLUMNS__ = [{"name":"Owner","labels":["example.com/user","owner"]},{"name":"Team","labels":["team"]}]`)
+	})
+
+	t.Run("none configured is an empty array", func(t *testing.T) {
+		require.Contains(t, get(t, nil), `window.__LABEL_COLUMNS__ = []`)
+	})
+
+	t.Run("a column name cannot close the script", func(t *testing.T) {
+		body := get(t, []LabelColumn{{Name: "</script><script>alert(1)", Labels: []string{"owner"}}})
+		require.NotContains(t, body, "</script><script>alert(1)")
+	})
+}

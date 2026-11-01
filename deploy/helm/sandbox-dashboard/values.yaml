@@ -57,6 +57,17 @@ service:
 # StripPrefix middleware, an nginx-ingress rewrite-target, and so on.
 basePath: ""
 
+# List columns read from sandbox labels, each showing the first of its labels a
+# sandbox has. Which labels say who owns a sandbox differs per fleet, so the
+# dashboard reads none on its own. For example:
+#
+#   labelColumns:
+#     - name: Owner
+#       labels: [example.com/user, owner]
+#     - name: Team
+#       labels: [example.com/team, team]
+labelColumns: []
+
 # The port the container listens on. One value drives the container port, the
 # probes and the address the binary binds, so they cannot disagree.
 listenPort: 8080

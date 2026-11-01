@@ -15,13 +15,10 @@ type ResourceSummary struct {
 	AgeSeconds int64  `json:"ageSeconds"` // seconds since creation
 
 	// The fields below are only populated for sandboxes; other kinds omit them.
-	Creator    string   `json:"creator,omitempty"`
-	Owner      string   `json:"owner,omitempty"`
-	Team       string   `json:"team,omitempty"`
-	Experiment string   `json:"experiment,omitempty"`
-	SessionID  string   `json:"sessionId,omitempty"`
-	Osb        *OsbView `json:"osb,omitempty"`
-	Pod        *PodView `json:"pod,omitempty"`
+	Creator   string   `json:"creator,omitempty"`
+	SessionID string   `json:"sessionId,omitempty"`
+	Osb       *OsbView `json:"osb,omitempty"`
+	Pod       *PodView `json:"pod,omitempty"`
 
 	// Labels is the sandbox's labels verbatim. The overview page derives its
 	// grouping dimensions from whatever keys the fleet actually carries, so no
@@ -66,6 +63,10 @@ func ageSeconds(meta metav1.ObjectMeta, now time.Time) int64 {
 // only 29/92, because OpenSandbox writes both "<uuid>" and "sandbox-<uuid>".
 const OsbIDLabel = "opensandbox.io/id"
 
+// SessionIDLabel names the task a sandbox runs, on fleets whose client stamps
+// one. The list labels its rows by it.
+const SessionIDLabel = "session_id"
+
 // Creator values reported in ResourceSummary.Creator.
 const (
 	CreatorOpenSandbox = "opensandbox"
@@ -79,32 +80,4 @@ func creatorFor(labels map[string]string) string {
 		return CreatorOpenSandbox
 	}
 	return CreatorUnknown
-}
-
-// identityFor pulls the human-meaningful labels. These are read from the CR
-// rather than the OpenSandbox API, which carries identical values, so that an
-// OpenSandbox outage costs one column instead of the whole table.
-//
-// sessionID is returned separately because it is the most reliably present of
-// the four: measured on the live cluster, 166 of 166 sandboxes carried
-// session_id while none carried owner/team/experiment, which the eval harness
-// stamps only for some workloads.
-//
-// Owner is accepted under two keys because the fleet has no single convention:
-// the domain-qualified ai21.com/owner and the bare owner. Neither appeared on
-// the 252 sandboxes measured in algo-studio, so this only pays off on fleets
-// whose harness stamps one of them.
-func identityFor(labels map[string]string) (owner, team, experiment, sessionID string) {
-	return firstLabel(labels, "ai21.com/owner", "owner"),
-		labels["team"], labels["experiment"], labels["session_id"]
-}
-
-// firstLabel returns the first key that is present and non-empty.
-func firstLabel(labels map[string]string, keys ...string) string {
-	for _, k := range keys {
-		if v := labels[k]; v != "" {
-			return v
-		}
-	}
-	return ""
 }

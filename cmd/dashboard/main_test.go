@@ -2,7 +2,10 @@ package main
 
 import (
 	"log/slog"
+	"reflect"
 	"testing"
+
+	"github.com/aGallea/sandbox-dashboard/internal/server"
 )
 
 // The chart sets the port through the environment so a single value can drive
@@ -83,6 +86,38 @@ func TestResolveLogLevel(t *testing.T) {
 			}
 			if got != tc.want {
 				t.Fatalf("got %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// A mistake in the setting fails startup: a column that silently went missing
+// would read as a fleet that stamps nothing.
+func TestResolveLabelColumns(t *testing.T) {
+	owner := `[{"name":"Owner","labels":["example.com/user","owner"]}]`
+	tests := []struct {
+		name, flag, env string
+		want            []server.LabelColumn
+		wantErr         bool
+	}{
+		{"nothing set means no columns", "", "", nil, false},
+		{"env only", "", owner, []server.LabelColumn{{Name: "Owner", Labels: []string{"example.com/user", "owner"}}}, false},
+		{"flag beats env", `[{"name":"Team","labels":["team"]}]`, owner, []server.LabelColumn{{Name: "Team", Labels: []string{"team"}}}, false},
+		{"not JSON", "Owner=owner", "", nil, true},
+		{"a misspelt field", `[{"name":"Owner","label":["owner"]}]`, "", nil, true},
+		{"a column with no name", `[{"labels":["owner"]}]`, "", nil, true},
+		{"a column with no labels", `[{"name":"Owner","labels":[]}]`, "", nil, true},
+		{"an empty label key", `[{"name":"Owner","labels":[""]}]`, "", nil, true},
+		{"two columns with one name", `[{"name":"Owner","labels":["a"]},{"name":"Owner","labels":["b"]}]`, "", nil, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := resolveLabelColumns(tc.flag, tc.env)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("err = %v, wantErr %v", err, tc.wantErr)
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("got %#v, want %#v", got, tc.want)
 			}
 		})
 	}
