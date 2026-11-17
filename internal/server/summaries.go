@@ -4,6 +4,7 @@ import (
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	extv1alpha1 "sigs.k8s.io/agent-sandbox/extensions/api/v1alpha1"
 )
@@ -76,10 +77,24 @@ const (
 	CreatorUnknown      = "unknown"
 )
 
-// creatorFor infers which system created a sandbox. OpenSandbox is checked
-// first: it is the client that asked for the sandbox, even on fleets where
-// it goes through the agent-sandbox controller.
-func creatorFor(meta *metav1.ObjectMeta) string {
+// Creator is a creator this install names: a sandbox whose labels match
+// Selector is reported as Name. Only Name and Icon reach the browser.
+type Creator struct {
+	Name     string          `json:"name"`
+	Selector labels.Selector `json:"-"`
+	Icon     string          `json:"icon,omitempty"`
+}
+
+// creatorFor infers which system created a sandbox, preferring the client
+// that asked for it over the system it went through: the install's own
+// creators first, in order, then OpenSandbox, then the agent-sandbox
+// controller OpenSandbox may run on.
+func creatorFor(meta *metav1.ObjectMeta, custom []Creator) string {
+	for _, c := range custom {
+		if c.Selector.Matches(labels.Set(meta.Labels)) {
+			return c.Name
+		}
+	}
 	if meta.Labels[OsbIDLabel] != "" {
 		return CreatorOpenSandbox
 	}

@@ -8,6 +8,7 @@ import (
 	"testing/fstest"
 
 	"github.com/stretchr/testify/require"
+	"k8s.io/apimachinery/pkg/labels"
 )
 
 func TestHealthz_AlwaysOK(t *testing.T) {
@@ -182,6 +183,39 @@ func TestSPA_CarriesTheLabelColumnsToTheBrowser(t *testing.T) {
 
 	t.Run("a column name cannot close the script", func(t *testing.T) {
 		body := get(t, []LabelColumn{{Name: "</script><script>alert(1)", Labels: []string{"owner"}}})
+		require.NotContains(t, body, "</script><script>alert(1)")
+	})
+}
+
+func TestSPA_CarriesTheCreatorsMarksToTheBrowser(t *testing.T) {
+	assets := fstest.MapFS{
+		"index.html": &fstest.MapFile{Data: []byte(
+			`<!doctype html><html><head><title>t</title></head><body></body></html>`)},
+	}
+	get := func(t *testing.T, creators []Creator) string {
+		t.Helper()
+		r := New(Deps{UIAssets: assets, Creators: creators, CacheSynced: func() bool { return true }})
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+		require.Equal(t, http.StatusOK, rec.Code)
+		return rec.Body.String()
+	}
+
+	t.Run("name and icon only: the selector stays on the server", func(t *testing.T) {
+		body := get(t, []Creator{
+			{Name: "harbor", Selector: labels.SelectorFromSet(labels.Set{"app": "harbor"}), Icon: "https://example.com/h.png"},
+			{Name: "evals", Selector: labels.Everything()},
+		})
+		require.Contains(t, body,
+			`window.__CREATORS__ = [{"name":"harbor","icon":"https://example.com/h.png"},{"name":"evals"}]`)
+	})
+
+	t.Run("none configured is an empty array", func(t *testing.T) {
+		require.Contains(t, get(t, nil), `window.__CREATORS__ = []`)
+	})
+
+	t.Run("a creator's name cannot close the script", func(t *testing.T) {
+		body := get(t, []Creator{{Name: "</script><script>alert(1)", Selector: labels.Everything()}})
 		require.NotContains(t, body, "</script><script>alert(1)")
 	})
 }

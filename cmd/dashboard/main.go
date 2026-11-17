@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
@@ -51,6 +52,8 @@ func main() {
 	flag.StringVar(&logLevel, "log-level", "", "Log level: debug, info, warn or error (default \"info\"; or AGENT_SANDBOX_DASHBOARD_LOG_LEVEL). Probe requests are logged at debug.")
 	var labelColumns string
 	flag.StringVar(&labelColumns, "label-columns", "", `List columns read from sandbox labels, as JSON: [{"name":"Owner","labels":["example.com/user","owner"]}]. A column shows the first of its labels a sandbox has. Or AGENT_SANDBOX_DASHBOARD_LABEL_COLUMNS.`)
+	var creators string
+	flag.StringVar(&creators, "creators", "", `Name creators the dashboard does not know, as JSON: [{"name":"harbor","selector":"app=harbor","icon":"data:image/png;base64,..."}]. A sandbox matching a selector is that creator; the first match wins, ahead of opensandbox and agent-sandbox. Or AGENT_SANDBOX_DASHBOARD_CREATORS.`)
 	flag.Parse()
 
 	listenAddr = resolveListenAddr(listenAddr, os.Getenv("AGENT_SANDBOX_DASHBOARD_LISTEN_ADDR"))
@@ -68,6 +71,11 @@ func main() {
 	columns, err := resolveLabelColumns(labelColumns, os.Getenv("AGENT_SANDBOX_DASHBOARD_LABEL_COLUMNS"))
 	if err != nil {
 		logger.Error("read label columns", "err", err)
+		os.Exit(1)
+	}
+	custom, err := resolveCreators(creators, os.Getenv("AGENT_SANDBOX_DASHBOARD_CREATORS"))
+	if err != nil {
+		logger.Error("read creators", "err", err)
 		os.Exit(1)
 	}
 
@@ -174,6 +182,7 @@ func main() {
 		WatchNamespaces: namespaces,
 		BasePath:        basePath,
 		LabelColumns:    columns,
+		Creators:        custom,
 		Metrics:         prom.NewRegistry(envOr("AGENT_SANDBOX_DASHBOARD_CONTROLLER_JOB", prom.DefaultControllerJob)),
 		CacheSynced:     cacheSynced.Load,
 		UIAssets:        assets,
@@ -312,6 +321,51 @@ func resolveLabelColumns(flagValue, envValue string) ([]server.LabelColumn, erro
 		seen[c.Name] = true
 	}
 	return columns, nil
+}
+
+// resolveCreators parses the flag (or its env fallback) as the creators' JSON.
+// Nil when neither is set; an error for anything it cannot use.
+func resolveCreators(flagValue, envValue string) ([]server.Creator, error) {
+	raw := flagValue
+	if raw == "" {
+		raw = envValue
+	}
+	if raw == "" {
+		return nil, nil
+	}
+	var entries []struct {
+		Name     string `json:"name"`
+		Selector string `json:"selector"`
+		Icon     string `json:"icon"`
+	}
+	dec := json.NewDecoder(strings.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&entries); err != nil {
+		return nil, fmt.Errorf("creators must be a JSON list of {name, selector, icon}: %w", err)
+	}
+	builtIn := []string{server.CreatorOpenSandbox, server.CreatorAgentSandbox, server.CreatorUnknown}
+	seen := map[string]bool{}
+	out := make([]server.Creator, 0, len(entries))
+	for _, e := range entries {
+		// An empty selector parses to "everything", which would claim the whole fleet.
+		if e.Name == "" || strings.TrimSpace(e.Selector) == "" {
+			return nil, fmt.Errorf("creator %q needs a name and a selector", e.Name)
+		}
+		if slices.Contains(builtIn, e.Name) || seen[e.Name] {
+			return nil, fmt.Errorf("creator %q is named twice or is a built-in creator", e.Name)
+		}
+		seen[e.Name] = true
+		sel, err := labels.Parse(e.Selector)
+		if err != nil {
+			return nil, fmt.Errorf("creator %q: %w", e.Name, err)
+		}
+		// The browser puts the icon in an <img src>; nothing but an image may get there.
+		if e.Icon != "" && !strings.HasPrefix(e.Icon, "data:image/") && !strings.HasPrefix(e.Icon, "https://") {
+			return nil, fmt.Errorf("creator %q: icon must be a data:image/ URI or an https:// URL", e.Name)
+		}
+		out = append(out, server.Creator{Name: e.Name, Selector: sel, Icon: e.Icon})
+	}
+	return out, nil
 }
 
 // resolveLogLevel parses the flag (or its env fallback) as a slog level. Info

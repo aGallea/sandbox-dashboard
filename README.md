@@ -135,6 +135,7 @@ binary all configure it the same way. Some also have flags, which win over the e
 | `AGENT_SANDBOX_DASHBOARD_LISTEN_ADDR` | `--listen-addr` | `:8080` | Bind address. A bare port is accepted. |
 | `AGENT_SANDBOX_DASHBOARD_WATCH_NAMESPACES` | `--watch-namespaces` | every namespace | Comma-separated namespaces to watch. See [Scope](#scope). |
 | `AGENT_SANDBOX_DASHBOARD_LABEL_COLUMNS` | `--label-columns` | none | List columns read from sandbox labels, as JSON. See [Label columns](#label-columns). |
+| `AGENT_SANDBOX_DASHBOARD_CREATORS` | `--creators` | none | Creators the dashboard does not know on its own, as JSON. See [Creators](#creators). |
 | `AGENT_SANDBOX_DASHBOARD_LOG_LEVEL` | `--log-level` | `info` | `debug`, `info`, `warn` or `error`. Probe requests (`/healthz`, `/readyz`) are logged at `debug`. |
 | `PROMETHEUS_URL` | `--prometheus-url` | unset | Base URL. Unset disables the metrics page and the usage panels. |
 | `OPENSANDBOX_URL` | `--opensandbox-url` | unset | Base URL. Unset disables the OpenSandbox fields. |
@@ -162,6 +163,25 @@ first of its labels a sandbox has:
 Each column is sortable and filterable in the sandbox list, appears once a sandbox has a value,
 and is a grouping on the overview even when the whole fleet shares one value. The dashboard
 refuses to start on a value it cannot read.
+
+### Creators
+
+The dashboard knows two creators on its own: `opensandbox` and `agent-sandbox`. Name any other
+system that creates sandboxes in `AGENT_SANDBOX_DASHBOARD_CREATORS`, a JSON list. A sandbox whose
+labels match a creator's `selector` (the syntax of `kubectl get -l`) is that creator:
+
+```json
+[
+  {"name": "harbor", "selector": "app.kubernetes.io/managed-by=harbor", "icon": "data:image/svg+xml;base64,PHN2Zy..."},
+  {"name": "evals", "selector": "experiment"}
+]
+```
+
+The first match wins, and these are checked before the built-in creators, so a system that
+creates its sandboxes through OpenSandbox can still be named. `icon` is optional: a
+`data:image/` URI (`printf 'data:image/png;base64,%s' "$(base64 < icon.png | tr -d '\n')"`) or an
+`https://` URL; without it the name shows in words. The dashboard refuses to start on a value it
+cannot read, an empty selector, or a built-in creator's name.
 
 ### Scope
 
@@ -238,10 +258,10 @@ Sandboxes are matched to OpenSandbox records on the `opensandbox.io/id` label, n
 name. Measured against one production fleet the label matched 102/102 records while the CR name
 matched only 29/92, because OpenSandbox writes both `<uuid>` and `sandbox-<uuid>`.
 
-`creator` needs no OpenSandbox configuration: `GET /api/v1/sandboxes` reports `opensandbox`
-when that label is present, `agent-sandbox` when the Sandbox is controlled by a `SandboxClaim`
-or `SandboxWarmPool` (the agent-sandbox controller made it), and `unknown` otherwise.
-OpenSandbox wins when both apply. `sessionId` is read from the `session_id` label and needs no
+`creator` needs no OpenSandbox configuration: `GET /api/v1/sandboxes` reports the first
+matching [install-named creator](#creators), else `opensandbox` when that label is present,
+`agent-sandbox` when the Sandbox is controlled by a `SandboxClaim` or `SandboxWarmPool` (the
+agent-sandbox controller made it), and `unknown` otherwise. `sessionId` is read from the `session_id` label and needs no
 OpenSandbox configuration either, but unlike `creator` it has no fallback value: it is omitted
 when the label is absent.
 

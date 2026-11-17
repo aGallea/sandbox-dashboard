@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 )
 
 func TestReadyPhase_Mapping(t *testing.T) {
@@ -46,7 +47,40 @@ func TestCreatorFor_NamesTheSystemThatAskedForTheSandbox(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, tc.want, creatorFor(&tc.meta))
+			require.Equal(t, tc.want, creatorFor(&tc.meta, nil))
 		})
 	}
+}
+
+func TestCreatorFor_InstallNamedCreators(t *testing.T) {
+	isController := true
+	claimOwned := []metav1.OwnerReference{{APIVersion: "extensions.agents.x-k8s.io/v1alpha1", Kind: "SandboxClaim", Name: "x", Controller: &isController}}
+	custom := []Creator{
+		{Name: "harbor", Selector: labels.SelectorFromSet(labels.Set{"app": "harbor"})},
+		{Name: "evals", Selector: mustSelector(t, "experiment")},
+	}
+	tests := []struct {
+		name string
+		meta metav1.ObjectMeta
+		want string
+	}{
+		{"matched by its selector", metav1.ObjectMeta{Labels: map[string]string{"app": "harbor"}}, "harbor"},
+		{"wins over opensandbox, which it may run on", metav1.ObjectMeta{Labels: map[string]string{"app": "harbor", "opensandbox.io/id": "abc"}}, "harbor"},
+		{"wins over the agent-sandbox controller", metav1.ObjectMeta{Labels: map[string]string{"app": "harbor"}, OwnerReferences: claimOwned}, "harbor"},
+		{"the first match in configured order wins", metav1.ObjectMeta{Labels: map[string]string{"app": "harbor", "experiment": "e1"}}, "harbor"},
+		{"a later creator still matches", metav1.ObjectMeta{Labels: map[string]string{"experiment": "e1"}}, "evals"},
+		{"no match falls through to the built-ins", metav1.ObjectMeta{Labels: map[string]string{"app": "other", "opensandbox.io/id": "abc"}}, CreatorOpenSandbox},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, creatorFor(&tc.meta, custom))
+		})
+	}
+}
+
+func mustSelector(t *testing.T, s string) labels.Selector {
+	t.Helper()
+	sel, err := labels.Parse(s)
+	require.NoError(t, err)
+	return sel
 }

@@ -14,10 +14,12 @@ import { useStickyParams } from '../prefs/sticky';
 import openSandboxMark from '../assets/opensandbox.png';
 import agentSandboxMark from '../assets/agent-sandbox.svg';
 import type { ResourceKind, ResourceSummary, UsageResponse } from '../api/client';
+import { creators } from '../api/creators';
 
 const CREATOR_MARKS: Record<string, string> = {
   opensandbox: openSandboxMark,
   'agent-sandbox': agentSandboxMark,
+  ...Object.fromEntries(creators().flatMap((c) => (c.icon ? [[c.name, c.icon]] : []))),
 };
 
 interface Props {

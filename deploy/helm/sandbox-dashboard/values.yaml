@@ -68,6 +68,19 @@ basePath: ""
 #       labels: [example.com/team, team]
 labelColumns: []
 
+# Creators the dashboard does not know on its own. A sandbox whose labels match
+# a creator's selector (kubectl -l syntax) is that creator; the first match
+# wins, ahead of the built-in opensandbox and agent-sandbox. The icon is a
+# data:image/ URI or an https:// URL; without one the name shows in words. Keep
+# icons to a few KB: the whole list travels in one environment variable, which
+# Linux caps at 128 KiB. For example:
+#
+#   creators:
+#     - name: harbor
+#       selector: app.kubernetes.io/managed-by=harbor
+#       icon: data:image/svg+xml;base64,PHN2ZyB4bWxucz0...
+creators: []
+
 # The port the container listens on. One value drives the container port, the
 # probes and the address the binary binds, so they cannot disagree.
 listenPort: 8080

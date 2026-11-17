@@ -231,6 +231,20 @@
         }
       }
     },
+    "creators": {
+      "type": "array",
+      "description": "Creators the dashboard does not know on its own; a sandbox matching a creator's label selector is that creator.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "selector"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "selector": {"type": "string", "minLength": 1},
+          "icon": {"type": "string", "pattern": "^(data:image/|https://)"}
+        }
+      }
+    },
     "resources": {
       "type": "object"
     },
