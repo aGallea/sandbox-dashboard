@@ -169,7 +169,10 @@ export function ResourceListPage({ kind }: Props) {
   // Both come back on their own once the fleet spans more than one value.
   const items = data?.items ?? [];
   const showNamespace = informative(items, (it) => it.namespace);
-  const showCreator = cfg.showOsb && informative(items, (it) => it.creator ?? '');
+  // Creator is the exception: a fleet made entirely by OpenSandbox still says
+  // something worth seeing, so the column stays while any creator is known.
+  const showCreator =
+    cfg.showOsb && items.some((it) => !!it.creator && it.creator !== 'unknown');
   const showNode = cfg.showOsb && hasValues('node');
 
   // Live usage needs Prometheus. Gated on the query succeeding rather than on a
