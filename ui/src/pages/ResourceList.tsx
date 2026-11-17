@@ -12,7 +12,13 @@ import { informative, matchesQuery, podSample, shortId, shortNode, taskLabel } f
 import { useRefreshInterval } from '../api/refresh';
 import { useStickyParams } from '../prefs/sticky';
 import openSandboxMark from '../assets/opensandbox.png';
+import agentSandboxMark from '../assets/agent-sandbox.svg';
 import type { ResourceKind, ResourceSummary, UsageResponse } from '../api/client';
+
+const CREATOR_MARKS: Record<string, string> = {
+  opensandbox: openSandboxMark,
+  'agent-sandbox': agentSandboxMark,
+};
 
 interface Props {
   kind: ResourceKind;
@@ -163,7 +169,10 @@ export function ResourceListPage({ kind }: Props) {
   // Both come back on their own once the fleet spans more than one value.
   const items = data?.items ?? [];
   const showNamespace = informative(items, (it) => it.namespace);
-  const showCreator = cfg.showOsb && informative(items, (it) => it.creator ?? '');
+  // Creator is the exception: a fleet made entirely by OpenSandbox still says
+  // something worth seeing, so the column stays while any creator is known.
+  const showCreator =
+    cfg.showOsb && items.some((it) => !!it.creator && it.creator !== 'unknown');
   const showNode = cfg.showOsb && hasValues('node');
 
   // Live usage needs Prometheus. Gated on the query succeeding rather than on a
@@ -542,20 +551,21 @@ function PhasePill({ phase }: { phase: string }) {
 /**
  * What created the sandbox.
  *
- * OpenSandbox gets its mark alone, without the word: in a column where nearly
+ * A creator with a mark gets it alone, without the word: in a column where nearly
  * every row says the same thing, the word is what costs width. The image carries
  * the accessible name that the text used to — dropping the text without moving
  * the label onto the `alt` would leave a column of six hundred unnamed pictures.
  *
  * A creator with no mark of its own keeps its name in words, which is the useful
- * asymmetry: the rows that are *not* OpenSandbox are the ones worth noticing.
+ * asymmetry: the rows nobody recognises are the ones worth noticing.
  */
 function Creator({ creator }: { creator?: string }) {
   if (!creator) return <span className="text-slate-400">—</span>;
-  if (creator === 'opensandbox') {
+  const mark = CREATOR_MARKS[creator];
+  if (mark) {
     return (
       <img
-        src={openSandboxMark}
+        src={mark}
         alt={creator}
         title={creator}
         width={32}

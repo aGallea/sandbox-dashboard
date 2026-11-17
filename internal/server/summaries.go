@@ -4,6 +4,8 @@ import (
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	extv1alpha1 "sigs.k8s.io/agent-sandbox/extensions/api/v1alpha1"
 )
 
 // ResourceSummary is the per-row DTO returned by every list endpoint.
@@ -69,15 +71,24 @@ const SessionIDLabel = "session_id"
 
 // Creator values reported in ResourceSummary.Creator.
 const (
-	CreatorOpenSandbox = "opensandbox"
-	CreatorUnknown     = "unknown"
+	CreatorOpenSandbox  = "opensandbox"
+	CreatorAgentSandbox = "agent-sandbox"
+	CreatorUnknown      = "unknown"
 )
 
-// creatorFor infers which system created a sandbox. No Sandbox CR in the wild
-// carries ownerReferences, so labels are the only available signal.
-func creatorFor(labels map[string]string) string {
-	if labels[OsbIDLabel] != "" {
+// creatorFor infers which system created a sandbox. OpenSandbox is checked
+// first: it is the client that asked for the sandbox, even on fleets where
+// it goes through the agent-sandbox controller.
+func creatorFor(meta *metav1.ObjectMeta) string {
+	if meta.Labels[OsbIDLabel] != "" {
 		return CreatorOpenSandbox
+	}
+	// The agent-sandbox controller makes a Sandbox only for a SandboxClaim or a
+	// SandboxWarmPool, and sets that object as the Sandbox's controller owner.
+	if owner := metav1.GetControllerOfNoCopy(meta); owner != nil {
+		if gv, err := schema.ParseGroupVersion(owner.APIVersion); err == nil && gv.Group == extv1alpha1.GroupVersion.Group {
+			return CreatorAgentSandbox
+		}
 	}
 	return CreatorUnknown
 }

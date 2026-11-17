@@ -238,11 +238,12 @@ Sandboxes are matched to OpenSandbox records on the `opensandbox.io/id` label, n
 name. Measured against one production fleet the label matched 102/102 records while the CR name
 matched only 29/92, because OpenSandbox writes both `<uuid>` and `sandbox-<uuid>`.
 
-`creator` is derived from that label alone, so `GET /api/v1/sandboxes` reports it —
-`opensandbox` when the label is present, `unknown` otherwise — whether or not OpenSandbox is
-configured. `sessionId` is likewise read from the `session_id` label and needs no OpenSandbox
-configuration, but unlike `creator` it has no fallback value: it is omitted when the label is
-absent.
+`creator` needs no OpenSandbox configuration: `GET /api/v1/sandboxes` reports `opensandbox`
+when that label is present, `agent-sandbox` when the Sandbox is controlled by a `SandboxClaim`
+or `SandboxWarmPool` (the agent-sandbox controller made it), and `unknown` otherwise.
+OpenSandbox wins when both apply. `sessionId` is read from the `session_id` label and needs no
+OpenSandbox configuration either, but unlike `creator` it has no fallback value: it is omitted
+when the label is absent.
 
 Configuring OpenSandbox adds a per-row `osb` object:
 

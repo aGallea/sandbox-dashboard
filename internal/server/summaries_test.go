@@ -23,20 +23,30 @@ func TestAge_FromCreationTimestamp(t *testing.T) {
 	require.InDelta(t, 300, age, 1)
 }
 
-func TestCreatorFor_IdentifiesOpenSandboxByLabel(t *testing.T) {
+func TestCreatorFor_NamesTheSystemThatAskedForTheSandbox(t *testing.T) {
+	isController := true
+	controlledBy := func(apiVersion, kind string) []metav1.OwnerReference {
+		return []metav1.OwnerReference{{APIVersion: apiVersion, Kind: kind, Name: "x", Controller: &isController}}
+	}
+	osbLabels := map[string]string{"opensandbox.io/id": "abc"}
 	tests := []struct {
-		name   string
-		labels map[string]string
-		want   string
+		name string
+		meta metav1.ObjectMeta
+		want string
 	}{
-		{"opensandbox id label present", map[string]string{"opensandbox.io/id": "abc"}, CreatorOpenSandbox},
-		{"label present but empty is not a creator", map[string]string{"opensandbox.io/id": ""}, CreatorUnknown},
-		{"a different creator's labels", map[string]string{"app": "x", "swe-instance-id": "y"}, CreatorUnknown},
-		{"no labels at all", nil, CreatorUnknown},
+		{"opensandbox id label present", metav1.ObjectMeta{Labels: osbLabels}, CreatorOpenSandbox},
+		{"label present but empty is not a creator", metav1.ObjectMeta{Labels: map[string]string{"opensandbox.io/id": ""}}, CreatorUnknown},
+		{"a different creator's labels", metav1.ObjectMeta{Labels: map[string]string{"app": "x", "swe-instance-id": "y"}}, CreatorUnknown},
+		{"no labels at all", metav1.ObjectMeta{}, CreatorUnknown},
+		{"made for a sandbox claim", metav1.ObjectMeta{OwnerReferences: controlledBy("extensions.agents.x-k8s.io/v1alpha1", "SandboxClaim")}, CreatorAgentSandbox},
+		{"made for a warm pool", metav1.ObjectMeta{OwnerReferences: controlledBy("extensions.agents.x-k8s.io/v1alpha1", "SandboxWarmPool")}, CreatorAgentSandbox},
+		{"opensandbox wins over the controller it runs on", metav1.ObjectMeta{Labels: osbLabels, OwnerReferences: controlledBy("extensions.agents.x-k8s.io/v1alpha1", "SandboxClaim")}, CreatorOpenSandbox},
+		{"another controller's owner reference", metav1.ObjectMeta{OwnerReferences: controlledBy("batch/v1", "Job")}, CreatorUnknown},
+		{"a non-controller owner from the extensions group", metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{APIVersion: "extensions.agents.x-k8s.io/v1alpha1", Kind: "SandboxClaim", Name: "x"}}}, CreatorUnknown},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, tc.want, creatorFor(tc.labels))
+			require.Equal(t, tc.want, creatorFor(&tc.meta))
 		})
 	}
 }
