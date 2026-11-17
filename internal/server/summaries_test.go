@@ -23,7 +23,7 @@ func TestAge_FromCreationTimestamp(t *testing.T) {
 	require.InDelta(t, 300, age, 1)
 }
 
-func TestCreatorFor(t *testing.T) {
+func TestCreatorFor_NamesTheSystemThatAskedForTheSandbox(t *testing.T) {
 	isController := true
 	controlledBy := func(apiVersion, kind string) []metav1.OwnerReference {
 		return []metav1.OwnerReference{{APIVersion: apiVersion, Kind: kind, Name: "x", Controller: &isController}}
