@@ -12,6 +12,14 @@ The 0.4.0 entry below predates that and is hand-written.
 
 ---
 
+## [0.11.0](https://github.com/aGallea/sandbox-dashboard/compare/v0.10.0...v0.11.0) (2026-11-17)
+
+
+### Features
+
+* let an install name its own creators ([#33](https://github.com/aGallea/sandbox-dashboard/issues/33)) ([4914cf6](https://github.com/aGallea/sandbox-dashboard/commit/4914cf635e8b6860c6bdb8c5ef9e832776125956))
+* name agent-sandbox as a creator and keep the Creator column ([#32](https://github.com/aGallea/sandbox-dashboard/issues/32)) ([17c60d5](https://github.com/aGallea/sandbox-dashboard/commit/17c60d5053b10bf3cd8805273d018220519f656d))
+
 ## [0.10.0](https://github.com/aGallea/sandbox-dashboard/compare/v0.9.1...v0.10.0) (2026-11-01)
 
 
