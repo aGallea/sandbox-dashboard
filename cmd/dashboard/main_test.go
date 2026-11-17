@@ -109,6 +109,7 @@ func TestResolveLabelColumns(t *testing.T) {
 		{"a column with no labels", `[{"name":"Owner","labels":[]}]`, "", nil, true},
 		{"an empty label key", `[{"name":"Owner","labels":[""]}]`, "", nil, true},
 		{"two columns with one name", `[{"name":"Owner","labels":["a"]},{"name":"Owner","labels":["b"]}]`, "", nil, true},
+		{"a second list after the first", `[{"name":"Owner","labels":["a"]}][{"name":"Team","labels":["b"]}]`, "", nil, true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -141,6 +142,7 @@ func TestResolveCreators(t *testing.T) {
 		{"a creator with no name", `[{"selector":"app=harbor"}]`, "", nil, true},
 		{"a creator with no selector would match every sandbox", `[{"name":"harbor"}]`, "", nil, true},
 		{"a selector that does not parse", `[{"name":"harbor","selector":"app in (a"}]`, "", nil, true},
+		{"a second list after the first", `[{"name":"a","selector":"x"}][{"name":"b","selector":"y"}]`, "", nil, true},
 		{"two creators with one name", `[{"name":"a","selector":"x"},{"name":"a","selector":"y"}]`, "", nil, true},
 		{"a built-in creator's name", `[{"name":"opensandbox","selector":"x"}]`, "", nil, true},
 		{"unknown is not a name to give", `[{"name":"unknown","selector":"x"}]`, "", nil, true},

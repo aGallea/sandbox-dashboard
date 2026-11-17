@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -305,9 +306,7 @@ func resolveLabelColumns(flagValue, envValue string) ([]server.LabelColumn, erro
 		return nil, nil
 	}
 	var columns []server.LabelColumn
-	dec := json.NewDecoder(strings.NewReader(raw))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&columns); err != nil {
+	if err := decodeStrict(raw, &columns); err != nil {
 		return nil, fmt.Errorf("label columns must be a JSON list of {name, labels}: %w", err)
 	}
 	seen := map[string]bool{}
@@ -338,9 +337,7 @@ func resolveCreators(flagValue, envValue string) ([]server.Creator, error) {
 		Selector string `json:"selector"`
 		Icon     string `json:"icon"`
 	}
-	dec := json.NewDecoder(strings.NewReader(raw))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&entries); err != nil {
+	if err := decodeStrict(raw, &entries); err != nil {
 		return nil, fmt.Errorf("creators must be a JSON list of {name, selector, icon}: %w", err)
 	}
 	builtIn := []string{server.CreatorOpenSandbox, server.CreatorAgentSandbox, server.CreatorUnknown}
@@ -366,6 +363,20 @@ func resolveCreators(flagValue, envValue string) ([]server.Creator, error) {
 		out = append(out, server.Creator{Name: e.Name, Selector: sel, Icon: e.Icon})
 	}
 	return out, nil
+}
+
+func decodeStrict(raw string, v any) error {
+	dec := json.NewDecoder(strings.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(v); err != nil {
+		return err
+	}
+	// Decode stops after the first value; without this, a second list or stray
+	// text after it would be dropped silently.
+	if _, err := dec.Token(); err != io.EOF {
+		return errors.New("unexpected text after the JSON value")
+	}
+	return nil
 }
 
 // resolveLogLevel parses the flag (or its env fallback) as a slog level. Info
