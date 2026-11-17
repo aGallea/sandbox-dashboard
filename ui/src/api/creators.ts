@@ -13,7 +13,6 @@ declare global {
   }
 }
 
-/** The creators the server wrote into index.html; none when it wrote nothing. */
 export function creators(): CreatorMark[] {
   return (typeof window !== 'undefined' && window.__CREATORS__) || [];
 }

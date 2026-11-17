@@ -21,6 +21,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
@@ -322,8 +323,6 @@ func resolveLabelColumns(flagValue, envValue string) ([]server.LabelColumn, erro
 	return columns, nil
 }
 
-// resolveCreators parses the flag (or its env fallback) as the creators' JSON.
-// Nil when neither is set; an error for anything it cannot use.
 func resolveCreators(flagValue, envValue string) ([]server.Creator, error) {
 	raw := flagValue
 	if raw == "" {
@@ -344,9 +343,8 @@ func resolveCreators(flagValue, envValue string) ([]server.Creator, error) {
 	seen := map[string]bool{}
 	out := make([]server.Creator, 0, len(entries))
 	for _, e := range entries {
-		// An empty selector parses to "everything", which would claim the whole fleet.
-		if e.Name == "" || strings.TrimSpace(e.Selector) == "" {
-			return nil, fmt.Errorf("creator %q needs a name and a selector", e.Name)
+		if strings.TrimSpace(e.Name) == "" {
+			return nil, fmt.Errorf("creator %q needs a name", e.Name)
 		}
 		if slices.Contains(builtIn, e.Name) || seen[e.Name] {
 			return nil, fmt.Errorf("creator %q is named twice or is a built-in creator", e.Name)
@@ -356,6 +354,13 @@ func resolveCreators(flagValue, envValue string) ([]server.Creator, error) {
 		if err != nil {
 			return nil, fmt.Errorf("creator %q: %w", e.Name, err)
 		}
+		// Install creators are checked before the built-ins, so a selector that
+		// requires nothing (empty, or only !x, x!=y, x notin (...)) would claim
+		// every sandbox without those labels.
+		reqs, _ := sel.Requirements()
+		if !slices.ContainsFunc(reqs, requiresALabel) {
+			return nil, fmt.Errorf("creator %q: selector must require a label the creator sets, not only its absence", e.Name)
+		}
 		// The browser puts the icon in an <img src>; nothing but an image may get there.
 		if e.Icon != "" && !strings.HasPrefix(e.Icon, "data:image/") && !strings.HasPrefix(e.Icon, "https://") {
 			return nil, fmt.Errorf("creator %q: icon must be a data:image/ URI or an https:// URL", e.Name)
@@ -363,6 +368,14 @@ func resolveCreators(flagValue, envValue string) ([]server.Creator, error) {
 		out = append(out, server.Creator{Name: e.Name, Selector: sel, Icon: e.Icon})
 	}
 	return out, nil
+}
+
+func requiresALabel(r labels.Requirement) bool {
+	switch r.Operator() {
+	case selection.DoesNotExist, selection.NotEquals, selection.NotIn:
+		return false
+	}
+	return true
 }
 
 func decodeStrict(raw string, v any) error {

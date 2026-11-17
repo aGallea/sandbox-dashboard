@@ -239,8 +239,8 @@
         "additionalProperties": false,
         "required": ["name", "selector"],
         "properties": {
-          "name": {"type": "string", "minLength": 1},
-          "selector": {"type": "string", "minLength": 1},
+          "name": {"type": "string", "pattern": "\\S", "not": {"enum": ["opensandbox", "agent-sandbox", "unknown"]}},
+          "selector": {"type": "string", "pattern": "\\S"},
           "icon": {"type": "string", "pattern": "^(data:image/|https://)"}
         }
       }

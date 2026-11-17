@@ -181,7 +181,9 @@ The first match wins, and these are checked before the built-in creators, so a s
 creates its sandboxes through OpenSandbox can still be named. `icon` is optional: a
 `data:image/` URI (`printf 'data:image/png;base64,%s' "$(base64 < icon.png | tr -d '\n')"`) or an
 `https://` URL; without it the name shows in words. The dashboard refuses to start on a value it
-cannot read, an empty selector, or a built-in creator's name.
+cannot read, a built-in creator's name, or a selector that requires no label to be present: an
+empty one, or one made only of `!x`, `x!=y` or `x notin (…)`, would match every sandbox without
+that label.
 
 ### Scope
 
