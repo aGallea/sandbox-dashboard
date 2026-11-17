@@ -1,6 +1,7 @@
 package server
 
 import (
+	"strings"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -69,15 +70,25 @@ const SessionIDLabel = "session_id"
 
 // Creator values reported in ResourceSummary.Creator.
 const (
-	CreatorOpenSandbox = "opensandbox"
-	CreatorUnknown     = "unknown"
+	CreatorOpenSandbox  = "opensandbox"
+	CreatorAgentSandbox = "agent-sandbox"
+	CreatorUnknown      = "unknown"
 )
 
-// creatorFor infers which system created a sandbox. No Sandbox CR in the wild
-// carries ownerReferences, so labels are the only available signal.
-func creatorFor(labels map[string]string) string {
-	if labels[OsbIDLabel] != "" {
+// agentSandboxExtensionsAPI is the API group of SandboxClaim and
+// SandboxWarmPool. The agent-sandbox controller makes a Sandbox only on behalf
+// of one of those, and sets it as the Sandbox's controller owner.
+const agentSandboxExtensionsAPI = "extensions.agents.x-k8s.io/"
+
+// creatorFor infers which system created a sandbox. OpenSandbox is checked
+// first: it is the client that asked for the sandbox, even on fleets where
+// it goes through the agent-sandbox controller.
+func creatorFor(meta *metav1.ObjectMeta) string {
+	if meta.Labels[OsbIDLabel] != "" {
 		return CreatorOpenSandbox
+	}
+	if owner := metav1.GetControllerOfNoCopy(meta); owner != nil && strings.HasPrefix(owner.APIVersion, agentSandboxExtensionsAPI) {
+		return CreatorAgentSandbox
 	}
 	return CreatorUnknown
 }

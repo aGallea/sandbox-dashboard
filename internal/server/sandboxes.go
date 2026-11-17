@@ -91,7 +91,7 @@ func handleSandboxList(d Deps) http.HandlerFunc {
 		for i := range list.Items {
 			item := &list.Items[i]
 			phase := readyPhase(item.Status.Conditions)
-			creator := creatorFor(item.Labels)
+			creator := creatorFor(&item.ObjectMeta)
 
 			// Join before any display filter: `matched` must count join success
 			// across the whole fleet, not "joined and survived the filters".
@@ -190,7 +190,7 @@ func handleSandboxDetail(d Deps) http.HandlerFunc {
 
 		now := d.now()
 		phase := readyPhase(sb.Status.Conditions)
-		creator := creatorFor(sb.Labels)
+		creator := creatorFor(&sb.ObjectMeta)
 
 		pods, err := podsBySandboxUID(r.Context(), d.Client, ns)
 		if err != nil && d.Logger != nil {
