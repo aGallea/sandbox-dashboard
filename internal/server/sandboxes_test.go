@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -622,4 +623,32 @@ func TestStripSections_LeavesASummaryWithoutThemAlone(t *testing.T) {
 	// A line that merely mentions LOGS or EVENTS is not a header.
 	summary = "----\nINSPECT\n----\nmsg: LOGS rotated, EVENTS flushed\n"
 	require.Equal(t, summary, stripSections(summary, "LOGS", "EVENTS"))
+}
+
+func TestSandboxes_InstallNamedCreatorsReachTheListFilterAndDetail(t *testing.T) {
+	objs := []client.Object{
+		&v1alpha1.Sandbox{ObjectMeta: metav1.ObjectMeta{Name: "via-harbor", Namespace: "default", Labels: map[string]string{"app": "harbor", OsbIDLabel: "h"}}},
+		&v1alpha1.Sandbox{ObjectMeta: metav1.ObjectMeta{Name: "via-osb", Namespace: "default", Labels: map[string]string{OsbIDLabel: "o"}}},
+	}
+	h := New(Deps{
+		Client:      fake.NewClientBuilder().WithScheme(k8s.NewScheme()).WithObjects(objs...).Build(),
+		CacheSynced: func() bool { return true },
+		Creators:    []Creator{{Name: "harbor", Selector: labels.SelectorFromSet(labels.Set{"app": "harbor"})}},
+	})
+	get := func(path string, into any) {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		require.Equal(t, http.StatusOK, rec.Code)
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), into))
+	}
+
+	var list sandboxListBody
+	get("/api/v1/sandboxes?creator=harbor", &list)
+	require.Len(t, list.Items, 1)
+	require.Equal(t, "via-harbor", list.Items[0].Name)
+
+	var detail SandboxDetail
+	get("/api/v1/sandboxes/default/via-harbor", &detail)
+	require.Equal(t, "harbor", detail.Summary.Creator)
 }

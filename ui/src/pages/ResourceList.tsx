@@ -14,11 +14,15 @@ import { useStickyParams } from '../prefs/sticky';
 import openSandboxMark from '../assets/opensandbox.png';
 import agentSandboxMark from '../assets/agent-sandbox.svg';
 import type { ResourceKind, ResourceSummary, UsageResponse } from '../api/client';
+import { creators } from '../api/creators';
 
-const CREATOR_MARKS: Record<string, string> = {
-  opensandbox: openSandboxMark,
-  'agent-sandbox': agentSandboxMark,
-};
+// A Map, not an object literal: a creator named `constructor` must not find
+// Object.prototype's.
+const CREATOR_MARKS = new Map<string, string>([
+  ['opensandbox', openSandboxMark],
+  ['agent-sandbox', agentSandboxMark],
+  ...creators().flatMap((c): [string, string][] => (c.icon ? [[c.name, c.icon]] : [])),
+]);
 
 interface Props {
   kind: ResourceKind;
@@ -561,7 +565,7 @@ function PhasePill({ phase }: { phase: string }) {
  */
 function Creator({ creator }: { creator?: string }) {
   if (!creator) return <span className="text-slate-400">—</span>;
-  const mark = CREATOR_MARKS[creator];
+  const mark = CREATOR_MARKS.get(creator);
   if (mark) {
     return (
       <img
@@ -570,7 +574,10 @@ function Creator({ creator }: { creator?: string }) {
         title={creator}
         width={32}
         height={32}
-        className="h-8 w-8"
+        className="h-8 w-8 object-contain"
+        // An install may point an icon at another host; it learns nothing
+        // about where the dashboard lives.
+        referrerPolicy="no-referrer"
       />
     );
   }

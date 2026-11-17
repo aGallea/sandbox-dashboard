@@ -61,6 +61,10 @@ spec:
             - name: AGENT_SANDBOX_DASHBOARD_LABEL_COLUMNS
               value: {{ toJson . | quote }}
             {{- end }}
+            {{- with .Values.creators }}
+            - name: AGENT_SANDBOX_DASHBOARD_CREATORS
+              value: {{ toJson . | quote }}
+            {{- end }}
             {{- if .Values.prometheus.url }}
             - name: PROMETHEUS_URL
               value: {{ .Values.prometheus.url | quote }}

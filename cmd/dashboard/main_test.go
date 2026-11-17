@@ -109,6 +109,7 @@ func TestResolveLabelColumns(t *testing.T) {
 		{"a column with no labels", `[{"name":"Owner","labels":[]}]`, "", nil, true},
 		{"an empty label key", `[{"name":"Owner","labels":[""]}]`, "", nil, true},
 		{"two columns with one name", `[{"name":"Owner","labels":["a"]},{"name":"Owner","labels":["b"]}]`, "", nil, true},
+		{"a second list after the first", `[{"name":"Owner","labels":["a"]}][{"name":"Team","labels":["b"]}]`, "", nil, true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -118,6 +119,54 @@ func TestResolveLabelColumns(t *testing.T) {
 			}
 			if !reflect.DeepEqual(got, tc.want) {
 				t.Fatalf("got %#v, want %#v", got, tc.want)
+			}
+		})
+	}
+}
+
+// Like the label columns, a mistake in the setting fails startup: a creator
+// that silently went missing would read as sandboxes nobody recognises.
+func TestResolveCreators(t *testing.T) {
+	harbor := `[{"name":"harbor","selector":"app=harbor","icon":"data:image/svg+xml;base64,PHN2Zz4="}]`
+	tests := []struct {
+		name, flag, env string
+		want            []string // name|selector|icon per creator
+		wantErr         bool
+	}{
+		{"nothing set means no creators", "", "", nil, false},
+		{"env only", "", harbor, []string{"harbor|app=harbor|data:image/svg+xml;base64,PHN2Zz4="}, false},
+		{"flag beats env", `[{"name":"evals","selector":"experiment"}]`, harbor, []string{"evals|experiment|"}, false},
+		{"an https icon", `[{"name":"evals","selector":"experiment","icon":"https://example.com/e.png"}]`, "", []string{"evals|experiment|https://example.com/e.png"}, false},
+		{"not JSON", "harbor=app=harbor", "", nil, true},
+		{"a misspelt field", `[{"name":"harbor","selectors":"app=harbor"}]`, "", nil, true},
+		{"a creator with no name", `[{"selector":"app=harbor"}]`, "", nil, true},
+		{"a creator with no selector would match every sandbox", `[{"name":"harbor"}]`, "", nil, true},
+		{"only a missing label would match every sandbox without it", `[{"name":"harbor","selector":"!team"}]`, "", nil, true},
+		{"only a not-equals would match every sandbox without the label", `[{"name":"harbor","selector":"team!=ml"}]`, "", nil, true},
+		{"only a notin would match every sandbox without the label", `[{"name":"harbor","selector":"team notin (ml)"}]`, "", nil, true},
+		{"a negation beside a required label", `[{"name":"harbor","selector":"app=harbor,!canary"}]`, "", []string{"harbor|app=harbor,!canary|"}, false},
+		{"a name of only spaces", `[{"name":"  ","selector":"app=harbor"}]`, "", nil, true},
+		{"a second list after the first", `[{"name":"a","selector":"x"}][{"name":"b","selector":"y"}]`, "", nil, true},
+		{"a selector that does not parse", `[{"name":"harbor","selector":"app in (a"}]`, "", nil, true},
+		{"two creators with one name", `[{"name":"a","selector":"x"},{"name":"a","selector":"y"}]`, "", nil, true},
+		{"a built-in creator's name", `[{"name":"opensandbox","selector":"x"}]`, "", nil, true},
+		{"unknown is not a name to give", `[{"name":"unknown","selector":"x"}]`, "", nil, true},
+		{"a plain-http icon", `[{"name":"a","selector":"x","icon":"http://example.com/a.png"}]`, "", nil, true},
+		{"a script URL as icon", `[{"name":"a","selector":"x","icon":"javascript:alert(1)"}]`, "", nil, true},
+		{"a data URI that is not an image", `[{"name":"a","selector":"x","icon":"data:text/html,<b>hi</b>"}]`, "", nil, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := resolveCreators(tc.flag, tc.env)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("err = %v, wantErr %v", err, tc.wantErr)
+			}
+			var flat []string
+			for _, c := range got {
+				flat = append(flat, c.Name+"|"+c.Selector.String()+"|"+c.Icon)
+			}
+			if !reflect.DeepEqual(flat, tc.want) {
+				t.Fatalf("got %#v, want %#v", flat, tc.want)
 			}
 		})
 	}

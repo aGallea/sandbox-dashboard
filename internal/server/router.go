@@ -56,6 +56,9 @@ type Deps struct {
 	// LabelColumns are the list columns this install reads from sandbox labels.
 	// They are handed to the browser, which reads the values off each row.
 	LabelColumns []LabelColumn
+	// Creators are the creators this install names, matched before the
+	// built-in ones. Their names and icons are handed to the browser.
+	Creators []Creator
 	// Now supplies the current time; tests substitute a fixed clock.
 	// If nil, time.Now is used.
 	Now func() time.Time
@@ -251,13 +254,18 @@ func serveIndex(w http.ResponseWriter, req *http.Request, d Deps) {
 	if columns == nil {
 		columns = []LabelColumn{}
 	}
+	creators := d.Creators
+	if creators == nil {
+		creators = []Creator{}
+	}
 	// Cannot fail on strings, and escapes <, > and &, so no name closes the script.
 	columnsJSON, _ := json.Marshal(columns)
+	creatorsJSON, _ := json.Marshal(creators)
 	// html.EscapeString on both: the value lands in an HTML attribute and in a
 	// JS string literal, and a quote in either would break out of it.
 	injected := fmt.Sprintf(
-		"<base href=\"%s/\"><script>window.__BASE_PATH__ = \"%s\"; window.__LABEL_COLUMNS__ = %s</script>",
-		html.EscapeString(base), html.EscapeString(base), columnsJSON,
+		"<base href=\"%s/\"><script>window.__BASE_PATH__ = \"%s\"; window.__LABEL_COLUMNS__ = %s; window.__CREATORS__ = %s</script>",
+		html.EscapeString(base), html.EscapeString(base), columnsJSON, creatorsJSON,
 	)
 
 	// Immediately after <head> so the base applies to every URL that follows.
